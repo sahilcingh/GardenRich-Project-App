@@ -153,68 +153,216 @@ class _HomeScreenState extends State<HomeScreen> {
             backgroundColor: Colors.red,
           ),
         );
-        setState(() => _productsFuture = _fetchProducts());
+        setState(() {
+          _productsFuture = _fetchProducts();
+        });
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text("Error: $e")));
+      }
     }
   }
 
-  Widget _buildAdminProductCard(Map<String, dynamic> product, bool isDark) {
-    final cardColor = isDark ? Colors.grey[900]! : Colors.white;
-    final textColor = isDark ? Colors.white : Colors.black87;
-    final variants = product['product_variants'] as List?;
-    final price = variants != null && variants.isNotEmpty
-        ? (variants.first['price'] ?? 0)
-        : 0;
-
+  Widget _buildAdminProductCard(Map<String, dynamic> item, bool isDark) {
+    // 1. Data Extraction
+    final variants = item['product_variants'] as List?;
+    double price = 0;
+    double mrp = 0;
     String weight = "1 pc";
+    int stock = 0;
+
     if (variants != null && variants.isNotEmpty) {
-      final unitSize = variants.first['unit_size'];
-      final unit = variants.first['unit'];
-      if (unitSize != null && unit != null)
+      final firstVar = variants.first;
+      price = double.tryParse(firstVar['price']?.toString() ?? '0') ?? 0;
+      mrp = double.tryParse(firstVar['mrp']?.toString() ?? '0') ?? price;
+      stock = int.tryParse(firstVar['stock']?.toString() ?? '0') ?? 0;
+
+      final unitSize = firstVar['unit_size'] ?? firstVar['qty'];
+      final unit = firstVar['unit'];
+      if (unitSize != null && unit != null) {
         weight = "$unitSize $unit";
-      else if (unitSize != null)
+      } else if (unitSize != null) {
         weight = "$unitSize";
+      }
     }
 
-    final imageUrl = product['image'];
+    int discountPercent = 0;
+    if (mrp > price && mrp > 0) {
+      discountPercent = (((mrp - price) / mrp) * 100).round();
+    }
+    double savings = mrp - price;
+    bool isFeatured = item['is_featured'] == true || discountPercent > 10;
+    bool hasDiscount = discountPercent > 0;
+    final textColor = isDark ? Colors.white : Colors.black87;
 
+    // 2. The Card Build
     return Container(
       decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(16),
+        color: isDark ? const Color(0xFF1c1c1e) : Colors.white,
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: isDark ? Colors.grey[800]! : Colors.grey.shade200,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
-      child: Stack(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // --- TOP HALF: IMAGE & BADGES ---
+          // 👇 FIXED: This single Expanded widget tells the image to absorb all remaining safe space
+          Expanded(
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                // The Image
+                Positioned.fill(
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(11),
+                    ),
+                    child: Container(
+                      color: Colors.white,
+                      child:
+                          item['image'] != null &&
+                              item['image'].toString().isNotEmpty
+                          ? Image.network(
+                              item['image'],
+                              fit: BoxFit.cover,
+                              width: double.infinity,
+                              height: double.infinity,
+                              errorBuilder: (c, e, s) =>
+                                  const Icon(Icons.eco, color: Colors.green),
+                            )
+                          : const Icon(Icons.image, color: Colors.grey),
+                    ),
+                  ),
+                ),
+
+                // Best Seller Badge
+                if (isFeatured)
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.star, color: Colors.amber, size: 10),
+                          SizedBox(width: 4),
+                          Text(
+                            "BEST SELLER",
+                            style: TextStyle(
+                              fontSize: 8,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.black87,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                // Discount Badge
+                if (hasDiscount)
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF00a651),
+                        borderRadius: BorderRadius.only(
+                          topLeft: Radius.circular(8),
+                        ),
+                      ),
+                      child: Text(
+                        "${discountPercent.toStringAsFixed(0)}% OFF",
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                // Admin Action Buttons
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Column(
+                    children: [
+                      GestureDetector(
+                        onTap: () => _deleteProduct(item),
+                        child: Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: Colors.redAccent,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.delete_outline,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      GestureDetector(
+                        onTap: () {}, // Edit Action
+                        child: Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: Colors.blueAccent,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.edit_outlined,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // --- BOTTOM HALF: TEXT DETAILS ---
+          // 👇 FIXED: Removed 'Expanded' here. The text will safely size itself without crashing during the layout swap.
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize
+                  .min, // Ensures it only takes the vertical space it needs
               children: [
-                Expanded(
-                  child: Center(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: imageUrl != null && imageUrl.toString().isNotEmpty
-                          ? Image.network(imageUrl, fit: BoxFit.cover)
-                          : Icon(
-                              Icons.image,
-                              size: 50,
-                              color: Colors.grey[700],
-                            ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
+                // Title
                 Text(
-                  product['name'] ?? 'Unknown',
+                  item['name'] ?? 'Unknown',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
@@ -223,58 +371,85 @@ class _HomeScreenState extends State<HomeScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  weight,
-                  style: TextStyle(color: Colors.grey[500], fontSize: 12),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  "Rs. $price",
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: Color(0xFF16a34a),
-                    fontSize: 16,
+                const SizedBox(height: 8),
+
+                // Dropdown Box
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
                   ),
-                ),
-              ],
-            ),
-          ),
-          Positioned(
-            top: 8,
-            right: 8,
-            child: Column(
-              children: [
-                GestureDetector(
-                  onTap: () => _deleteProduct(product),
-                  child: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: Colors.redAccent,
-                      borderRadius: BorderRadius.circular(8),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? const Color(0xFF2C2C2E)
+                        : Colors.grey.shade100,
+                    border: Border.all(
+                      color: isDark ? Colors.grey[700]! : Colors.grey.shade300,
                     ),
-                    child: const Icon(
-                      Icons.delete_outline,
-                      color: Colors.white,
-                      size: 18,
-                    ),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        "$weight (Only $stock left)",
+                        style: TextStyle(
+                          color: textColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      Icon(
+                        Icons.keyboard_arrow_down,
+                        color: textColor,
+                        size: 16,
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 8),
-                GestureDetector(
-                  onTap: () {},
-                  child: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: Colors.blueAccent,
-                      borderRadius: BorderRadius.circular(8),
+
+                // Price
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          "Rs. ${price.toInt()}",
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF16a34a),
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        if (hasDiscount)
+                          Text(
+                            "Rs. ${mrp.toInt()}",
+                            style: const TextStyle(
+                              color: Colors.grey,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              decoration: TextDecoration.lineThrough,
+                            ),
+                          ),
+                      ],
                     ),
-                    child: const Icon(
-                      Icons.edit_outlined,
-                      color: Colors.white,
-                      size: 18,
-                    ),
-                  ),
+                    if (savings > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2.0),
+                        child: Text(
+                          "Save Rs. ${savings.toInt()}",
+                          style: const TextStyle(
+                            color: Color(0xFF16a34a),
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ],
             ),
@@ -463,8 +638,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 onSelected: (value) async {
                   if (value == 'dashboard') {
-                    // 👇 FIXED: Route directly to your new Dashboard!
-                    context.push('/admin-dashboard');
+                    await context.push('/admin-dashboard');
+
+                    _fetchCategories();
+                    setState(() {
+                      _productsFuture = _fetchProducts();
+                    });
                   } else if (value == 'orders') {
                     // Route to Manage Orders
                   } else if (value == 'logout') {
@@ -644,8 +823,9 @@ class _HomeScreenState extends State<HomeScreen> {
             _productsFuture = _fetchProducts();
             _fetchCategories();
             final user = Supabase.instance.client.auth.currentUser;
-            if (user != null && user.email != null)
+            if (user != null && user.email != null) {
               _checkAdminRole(user.email!);
+            }
           });
         },
         child: Column(
@@ -747,12 +927,15 @@ class _HomeScreenState extends State<HomeScreen> {
               child: FutureBuilder<List<Map<String, dynamic>>>(
                 future: _productsFuture,
                 builder: (context, snapshot) {
-                  if (snapshot.hasError)
+                  if (snapshot.hasError) {
                     return const Center(child: Text("Error fetching data"));
-                  if (snapshot.connectionState == ConnectionState.waiting)
+                  }
+                  if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
-                  if (!snapshot.hasData || snapshot.data!.isEmpty)
+                  }
+                  if (!snapshot.hasData || snapshot.data!.isEmpty) {
                     return const Center(child: Text("No products available"));
+                  }
 
                   final products = snapshot.data!.where((item) {
                     final matchesSearch = (item['name'] ?? "")

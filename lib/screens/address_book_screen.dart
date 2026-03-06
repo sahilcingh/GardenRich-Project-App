@@ -303,15 +303,17 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
       body: FutureBuilder<List<Map<String, dynamic>>>(
         future: _addressesFuture,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting)
+          if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
-          if (snapshot.hasError)
+          }
+          if (snapshot.hasError) {
             return Center(
               child: Text(
                 "Error loading addresses",
                 style: TextStyle(color: textColor),
               ),
             );
+          }
 
           final addresses = snapshot.data ?? [];
 

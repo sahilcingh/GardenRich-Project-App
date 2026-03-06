@@ -270,7 +270,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                   ),
                 ),
               ),
-              if (trailing != null) trailing,
+              ?trailing,
             ],
           ),
           const SizedBox(height: 20),

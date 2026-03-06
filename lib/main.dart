@@ -15,9 +15,11 @@ import 'screens/place_order_screen.dart';
 import 'screens/order_details_screen.dart';
 import 'screens/order_screen.dart';
 import 'screens/admin_products_screen.dart';
-// 👇 NEW: Import the Admin Home Screen
 import 'screens/admin_home_screen.dart';
-import 'screens/admin_dashboard_screen.dart';
+// 👇 NEW: Import the Admin Categories Screen
+import 'screens/admin_categories_screen.dart';
+import 'screens/admin_store_settings_screen.dart';
+import 'screens/admin_orders_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -37,7 +39,6 @@ final _router = GoRouter(
   routes: [
     GoRoute(path: '/splash', builder: (context, state) => const SplashScreen()),
 
-    // 👇 NEW: Register the Admin Home route
     GoRoute(
       path: '/admin-home',
       builder: (context, state) => const AdminHomeScreen(),
@@ -45,6 +46,15 @@ final _router = GoRouter(
     GoRoute(
       path: '/admin-dashboard',
       builder: (context, state) => const AdminDashboardScreen(),
+    ),
+    // 👇 NEW: Register the Admin Categories route
+    GoRoute(
+      path: '/admin-categories',
+      builder: (context, state) => const AdminCategoriesScreen(),
+    ),
+    GoRoute(
+      path: '/admin-orders',
+      builder: (context, state) => const AdminOrdersScreen(),
     ),
 
     GoRoute(
@@ -78,6 +88,10 @@ final _router = GoRouter(
     GoRoute(
       path: '/profile',
       builder: (context, state) => const ProfileScreen(),
+    ),
+    GoRoute(
+      path: '/admin-settings',
+      builder: (context, state) => const AdminStoreSettingsScreen(),
     ),
     GoRoute(
       path: '/place-order',

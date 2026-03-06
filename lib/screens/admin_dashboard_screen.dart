@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart'; // 👇 NEW: For Camera/Gallery
+import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -12,17 +13,15 @@ class AdminDashboardScreen extends StatefulWidget {
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   // Form Controllers
   final _nameController = TextEditingController();
-  String _selectedCategory = "Select a category";
-  final List<String> _categories = [
-    "Select a category",
-    "Food",
-    "Skincare",
-    "Dairy",
-    "Grocery",
-  ];
+
+  // Dynamic categories list
+  List<String> _categories = [];
+  String? _selectedCategory;
+  bool _isLoadingCategories = true;
 
   // Image Picker State
   XFile? _imageFile;
+  bool _isLoading = false;
 
   // Dynamic Variant Rows
   final List<Map<String, TextEditingController>> _variants = [];
@@ -32,13 +31,44 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   void initState() {
     super.initState();
     _addVariantRow(); // Add one empty row by default
+    _fetchCategories(); // Fetch dynamic categories on load
+  }
+
+  // Function to grab categories from Supabase
+  Future<void> _fetchCategories() async {
+    try {
+      final response = await Supabase.instance.client
+          .from('categories')
+          .select('name')
+          .order('id');
+
+      if (mounted) {
+        setState(() {
+          // Extract names, ignoring "All Products"
+          _categories = response
+              .map((cat) => cat['name'].toString())
+              .where((name) => name != 'All Products')
+              .toList();
+
+          // Auto-select the first one if available
+          if (_categories.isNotEmpty) {
+            _selectedCategory = _categories.first;
+          }
+
+          _isLoadingCategories = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error fetching categories: $e");
+      if (mounted) setState(() => _isLoadingCategories = false);
+    }
   }
 
   void _addVariantRow() {
     setState(() {
       _variants.add({
         'qty': TextEditingController(),
-        'unit': TextEditingController(text: 'ml'),
+        'unit': TextEditingController(text: 'g'),
         'price': TextEditingController(),
         'mrp': TextEditingController(),
         'stock': TextEditingController(),
@@ -57,7 +87,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     super.dispose();
   }
 
-  // 👇 NEW: Bottom Sheet to choose Camera or Gallery
+  // Bottom Sheet to choose Camera or Gallery
   void _showImageSourceDialog() {
     showModalBottomSheet(
       context: context,
@@ -101,7 +131,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  // 👇 NEW: Actually opens the camera/gallery and grabs the image
+  // Actually opens the camera/gallery and grabs the image
   Future<void> _pickImage(ImageSource source) async {
     Navigator.pop(context); // Close the bottom sheet first
     try {
@@ -121,6 +151,98 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           context,
         ).showSnackBar(SnackBar(content: Text("Failed to pick image: $e")));
       }
+    }
+  }
+
+  // SAVING TO SUPABASE
+  Future<void> _submitProduct() async {
+    if (_nameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please enter a product name")),
+      );
+      return;
+    }
+    if (_selectedCategory == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Please select a category")));
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final client = Supabase.instance.client;
+      String imageUrl = '';
+
+      if (_imageFile != null) {
+        final bytes = await _imageFile!.readAsBytes();
+        final fileExt = _imageFile!.name.split('.').last;
+        final fileName = '${DateTime.now().millisecondsSinceEpoch}.$fileExt';
+
+        await client.storage
+            .from('product-images')
+            .uploadBinary(
+              fileName,
+              bytes,
+              fileOptions: FileOptions(contentType: 'image/$fileExt'),
+            );
+        imageUrl = client.storage.from('product-images').getPublicUrl(fileName);
+      }
+
+      final productData = {
+        'name': _nameController.text.trim(),
+        'category': _selectedCategory,
+        'image': imageUrl,
+      };
+
+      final productResponse = await client
+          .from('products')
+          .insert(productData)
+          .select()
+          .single();
+      final productId = productResponse['id'];
+
+      final List<Map<String, dynamic>> variantsData = [];
+      for (var variant in _variants) {
+        final qty = variant['qty']!.text.trim();
+        final unit = variant['unit']!.text.trim();
+        final price = variant['price']!.text.trim();
+        final mrp = variant['mrp']!.text.trim();
+        final stock = variant['stock']!.text.trim();
+
+        if (qty.isNotEmpty && price.isNotEmpty) {
+          variantsData.add({
+            'product_id': productId,
+            'weight': '$qty $unit',
+            'price': double.tryParse(price) ?? 0,
+            'mrp': double.tryParse(mrp) ?? 0,
+            'stock': int.tryParse(stock) ?? 0,
+          });
+        }
+      }
+
+      if (variantsData.isNotEmpty) {
+        await client.from('product_variants').insert(variantsData);
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Product listed successfully!"),
+            backgroundColor: Color(0xFF16a34a),
+          ),
+        );
+        context.go('/home');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -158,49 +280,164 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
         ),
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 16.0),
-            child: Row(
-              children: [
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: isDark ? Colors.white : const Color(0xFF18181b),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: Text(
-                      "A",
-                      style: TextStyle(
-                        color: isDark ? Colors.black : Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
+          Theme(
+            data: Theme.of(context).copyWith(
+              splashColor: Colors.transparent,
+              highlightColor: Colors.transparent,
+            ),
+            child: PopupMenuButton<String>(
+              offset: const Offset(0, 50),
+              color: isDark ? Colors.grey[900] : Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              onSelected: (value) async {
+                if (value == 'orders') {
+                  context.push('/admin-orders'); // Route to Manage Orders
+                } else if (value == 'logout') {
+                  await Supabase.instance.client.auth.signOut();
+                  if (context.mounted) context.go('/login');
+                }
+              },
+              itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                PopupMenuItem<String>(
+                  enabled: false,
+                  height: 30,
+                  child: Text(
+                    "ADMIN PANEL",
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.2,
+                      color: Colors.grey[500],
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  "Admin",
-                  style: TextStyle(
-                    color: textColor,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
+                PopupMenuItem<String>(
+                  value: 'orders',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.assignment_outlined,
+                        color: isDark ? Colors.grey[300] : Colors.black87,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        "Manage Orders",
+                        style: TextStyle(
+                          color: isDark ? Colors.white : Colors.black87,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const PopupMenuDivider(),
+                PopupMenuItem<String>(
+                  value: 'logout',
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.logout,
+                        color: Colors.redAccent,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      const Text(
+                        "Log Out",
+                        style: TextStyle(
+                          color: Colors.redAccent,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
+              child: Padding(
+                padding: const EdgeInsets.only(right: 16.0),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 4,
+                  ),
+                  color: Colors.transparent,
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? Colors.white
+                              : const Color(0xFF18181b),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Center(
+                          child: Text(
+                            "A",
+                            style: TextStyle(
+                              color: isDark ? Colors.black : Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        "Admin",
+                        style: TextStyle(
+                          color: textColor,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? Colors.white
+                              : const Color(0xFF18181b),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          "ADMIN",
+                          style: TextStyle(
+                            color: isDark ? Colors.black : Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(Icons.keyboard_arrow_down, color: Colors.grey[500]),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         ],
       ),
 
-      // Mobile Only Drawer (Hidden on wide screens automatically by our layout)
+      // Mobile Only Drawer (Passes isDrawer: true)
       drawer: Drawer(
         backgroundColor: cardColor,
-        child: SafeArea(child: _buildSidebarMenu(textColor, isDark, cardColor)),
+        child: SafeArea(
+          child: _buildSidebarMenu(
+            textColor,
+            isDark,
+            cardColor,
+            isDrawer: true,
+          ),
+        ),
       ),
 
-      // 👇 NEW: Responsive Layout (Side-by-side on Web/Tablet, Stacked on Mobile)
+      // Responsive Layout
       body: LayoutBuilder(
         builder: (context, constraints) {
           final isWideScreen = constraints.maxWidth > 900;
@@ -208,7 +445,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           return Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Show the permanent sidebar ONLY if the screen is wide enough
               if (isWideScreen)
                 Container(
                   width: 250,
@@ -220,10 +456,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       color: isDark ? Colors.grey[800]! : Colors.grey.shade200,
                     ),
                   ),
-                  child: _buildSidebarMenu(textColor, isDark, cardColor),
+                  child: _buildSidebarMenu(
+                    textColor,
+                    isDark,
+                    cardColor,
+                    isDrawer: false,
+                  ),
                 ),
 
-              // The actual form takes up the rest of the space
               Expanded(child: _buildFormContent(textColor, isDark, cardColor)),
             ],
           );
@@ -233,9 +473,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // SIDEBAR WIDGET (Shared between wide-screen mode and mobile Drawer)
+  // SIDEBAR WIDGET
   // ---------------------------------------------------------------------------
-  Widget _buildSidebarMenu(Color textColor, bool isDark, Color cardColor) {
+  Widget _buildSidebarMenu(
+    Color textColor,
+    bool isDark,
+    Color cardColor, {
+    bool isDrawer = false,
+  }) {
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -286,8 +531,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   ),
                 ),
                 onTap: () {
-                  if (Scaffold.of(context).isDrawerOpen)
-                    Navigator.pop(context); // Close drawer if open
+                  if (isDrawer) {
+                    Navigator.pop(context);
+                  }
                 },
               ),
             ),
@@ -298,7 +544,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               "Categories",
               style: TextStyle(color: textColor, fontWeight: FontWeight.w500),
             ),
-            onTap: () {},
+            onTap: () async {
+              if (isDrawer) {
+                Navigator.pop(context);
+              }
+              await context.push('/admin-categories');
+              _fetchCategories();
+            },
           ),
           ListTile(
             leading: Icon(Icons.settings_outlined, color: Colors.grey[600]),
@@ -306,7 +558,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               "Store Settings",
               style: TextStyle(color: textColor, fontWeight: FontWeight.w500),
             ),
-            onTap: () {},
+            onTap: () async {
+              if (isDrawer) {
+                Navigator.pop(context);
+              }
+              await context.push('/admin-settings');
+            },
           ),
           ListTile(
             leading: Icon(Icons.assignment_outlined, color: Colors.grey[600]),
@@ -314,7 +571,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               "Orders",
               style: TextStyle(color: textColor, fontWeight: FontWeight.w500),
             ),
-            onTap: () {},
+            onTap: () {
+              // 👇 FIXED: Uses the boolean isDrawer flag instead of Scaffold context lookup
+              if (isDrawer) {
+                Navigator.pop(context);
+              }
+              context.push('/admin-orders');
+            },
           ),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 8.0),
@@ -327,8 +590,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               style: TextStyle(color: textColor, fontWeight: FontWeight.w500),
             ),
             onTap: () {
-              if (Scaffold.of(context).isDrawerOpen) Navigator.pop(context);
-              context.go('/home'); // Back to main store
+              if (isDrawer) {
+                Navigator.pop(context);
+              }
+              context.go('/home');
             },
           ),
           const SizedBox(height: 20),
@@ -382,39 +647,53 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 const SizedBox(height: 20),
 
                 _buildLabel("CATEGORY"),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: isDark ? Colors.grey[700]! : Colors.grey.shade300,
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: _selectedCategory,
-                      isExpanded: true,
-                      dropdownColor: cardColor,
-                      icon: const Icon(
-                        Icons.keyboard_arrow_down,
-                        color: Colors.grey,
-                      ),
-                      items: _categories.map((String value) {
-                        return DropdownMenuItem<String>(
-                          value: value,
-                          child: Text(
-                            value,
-                            style: TextStyle(color: textColor),
+                _isLoadingCategories
+                    ? const Padding(
+                        padding: EdgeInsets.all(16.0),
+                        child: Center(
+                          child: SizedBox(
+                            height: 24,
+                            width: 24,
+                            child: CircularProgressIndicator(),
                           ),
-                        );
-                      }).toList(),
-                      onChanged: (newValue) {
-                        if (newValue != null)
-                          setState(() => _selectedCategory = newValue);
-                      },
-                    ),
-                  ),
-                ),
+                        ),
+                      )
+                    : Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: isDark
+                                ? Colors.grey[700]!
+                                : Colors.grey.shade300,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: _selectedCategory,
+                            isExpanded: true,
+                            dropdownColor: cardColor,
+                            icon: const Icon(
+                              Icons.keyboard_arrow_down,
+                              color: Colors.grey,
+                            ),
+                            items: _categories.map((String value) {
+                              return DropdownMenuItem<String>(
+                                value: value,
+                                child: Text(
+                                  value,
+                                  style: TextStyle(color: textColor),
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (newValue) {
+                              if (newValue != null) {
+                                setState(() => _selectedCategory = newValue);
+                              }
+                            },
+                          ),
+                        ),
+                      ),
                 const SizedBox(height: 24),
 
                 _buildLabel("PACK SIZES / VARIANTS"),
@@ -452,7 +731,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               ),
                               _buildGridTextField(
                                 variant['unit']!,
-                                "ml",
+                                "g",
                                 80,
                                 isDark,
                               ),
@@ -521,8 +800,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   child: Row(
                     children: [
                       ElevatedButton(
-                        onPressed:
-                            _showImageSourceDialog, // 👇 NEW: Opens Camera/Gallery menu!
+                        onPressed: _showImageSourceDialog,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: isDark
                               ? Colors.grey[800]
@@ -540,7 +818,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          // 👇 NEW: Displays the selected file name dynamically
                           _imageFile != null
                               ? _imageFile!.name
                               : "No file chosen",
@@ -599,9 +876,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   width: double.infinity,
                   height: 56,
                   child: ElevatedButton(
-                    onPressed: () {
-                      // TODO: Map controllers and insert into Supabase
-                    },
+                    onPressed: _isLoading ? null : _submitProduct,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: isDark
                           ? Colors.white
@@ -611,13 +886,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    child: const Text(
-                      "List Product",
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    child: _isLoading
+                        ? const CircularProgressIndicator(
+                            color: Color(0xFF16a34a),
+                          )
+                        : const Text(
+                            "List Product",
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                   ),
                 ),
               ],

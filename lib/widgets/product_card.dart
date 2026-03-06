@@ -83,7 +83,7 @@ class _ProductCardState extends State<ProductCard> {
         if (Supabase.instance.client.auth.currentUser != null) {
           widget.cartItems.add(cartItem);
           widget.onCartChanged();
-          if (mounted)
+          if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text("$itemName ($weightLabel) added to cart!"),
@@ -92,6 +92,7 @@ class _ProductCardState extends State<ProductCard> {
                 margin: const EdgeInsets.only(bottom: 70, left: 16, right: 16),
               ),
             );
+          }
         }
       }
       return;
@@ -176,6 +177,7 @@ class _ProductCardState extends State<ProductCard> {
             child: Stack(
               clipBehavior: Clip.none,
               children: [
+                // 1. The Image perfectly filling the top half
                 Positioned.fill(
                   child: ClipRRect(
                     borderRadius: const BorderRadius.vertical(
@@ -188,8 +190,10 @@ class _ProductCardState extends State<ProductCard> {
                               item['image'].toString().isNotEmpty
                           ? Image.network(
                               item['image'],
-                              fit: BoxFit.contain,
+                              fit: BoxFit
+                                  .cover, // Forces image to completely fill the space
                               width: double.infinity,
+                              height: double.infinity,
                               errorBuilder: (c, e, s) =>
                                   const Icon(Icons.eco, color: Colors.green),
                             )
@@ -197,6 +201,8 @@ class _ProductCardState extends State<ProductCard> {
                     ),
                   ),
                 ),
+
+                // 2. Best Seller Badge (Top Left)
                 if (isFeatured)
                   Positioned(
                     top: 8,
@@ -235,18 +241,22 @@ class _ProductCardState extends State<ProductCard> {
                       ),
                     ),
                   ),
+
+                // 3. Discount Badge (Bottom Right)
                 if (hasDiscount && availableVariants.isNotEmpty)
                   Positioned(
-                    bottom: -10,
-                    right: 12,
+                    bottom: 0, // 👇 FIXED: Flush with the bottom edge
+                    right: 0, // 👇 FIXED: Flush with the right edge
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 8,
                         vertical: 6,
                       ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF00a651),
-                        borderRadius: BorderRadius.circular(4),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF00a651), // Your GardenRich Green
+                        borderRadius: BorderRadius.only(
+                          topLeft: Radius.circular(8), // Nice inner curve
+                        ),
                       ),
                       child: Text(
                         "${discountPercent.toStringAsFixed(0)}% OFF",
@@ -336,8 +346,9 @@ class _ProductCardState extends State<ProductCard> {
                                       0;
                                   String label =
                                       v['weight']?.toString() ?? '1 pc';
-                                  if (stock > 0 && stock <= 5)
+                                  if (stock > 0 && stock <= 5) {
                                     label += ' (Only $stock left)';
+                                  }
                                   return DropdownMenuItem<dynamic>(
                                     value: v['id'],
                                     child: Text(
@@ -349,10 +360,11 @@ class _ProductCardState extends State<ProductCard> {
                                 })
                                 .toList(),
                             onChanged: (newVariantId) {
-                              if (newVariantId != null)
+                              if (newVariantId != null) {
                                 setState(
                                   () => _selectedVariantId = newVariantId,
                                 );
+                              }
                             },
                           ),
                         ),
