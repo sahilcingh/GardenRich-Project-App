@@ -10,33 +10,63 @@ class AdminHomeScreen extends StatefulWidget {
 }
 
 class _AdminHomeScreenState extends State<AdminHomeScreen> {
-  late Future<List<Map<String, dynamic>>> _productsFuture;
+  List<Map<String, dynamic>> _products = [];
+  List<String> _categories = ['All Products'];
+  String _selectedCategory = 'All Products';
   String _searchQuery = "";
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _productsFuture = _fetchProducts();
+    _fetchData();
   }
 
-  Future<List<Map<String, dynamic>>> _fetchProducts() async {
+  Future<void> _fetchData() async {
     final client = Supabase.instance.client;
-    final productsResponse = await client
-        .from('products')
-        .select()
-        .order('created_at', ascending: false);
-    final variantsResponse = await client.from('product_variants').select();
+    try {
+      // 1. Fetch Categories dynamically
+      final catsResponse = await client
+          .from('categories')
+          .select('name')
+          .order('id');
+      final List<String> loadedCats = ['All Products'];
+      loadedCats.addAll(
+        catsResponse
+            .map((c) => c['name'].toString())
+            .where((n) => n != 'All Products'),
+      );
 
-    final List<Map<String, dynamic>> combinedProducts = [];
-    for (var product in productsResponse) {
-      final mutableProduct = Map<String, dynamic>.from(product);
-      final matchingVariants = variantsResponse
-          .where((v) => v['product_id'].toString() == product['id'].toString())
-          .toList();
-      mutableProduct['product_variants'] = matchingVariants;
-      combinedProducts.add(mutableProduct);
+      // 2. Fetch Products & Variants
+      final productsResponse = await client
+          .from('products')
+          .select()
+          .order('created_at', ascending: false);
+      final variantsResponse = await client.from('product_variants').select();
+
+      final List<Map<String, dynamic>> combinedProducts = [];
+      for (var product in productsResponse) {
+        final mutableProduct = Map<String, dynamic>.from(product);
+        final matchingVariants = variantsResponse
+            .where(
+              (v) => v['product_id'].toString() == product['id'].toString(),
+            )
+            .toList();
+        mutableProduct['product_variants'] = matchingVariants;
+        combinedProducts.add(mutableProduct);
+      }
+
+      if (mounted) {
+        setState(() {
+          _categories = loadedCats;
+          _products = combinedProducts;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error fetching data: $e");
+      if (mounted) setState(() => _isLoading = false);
     }
-    return combinedProducts;
   }
 
   Future<void> _deleteProduct(Map<String, dynamic> product) async {
@@ -64,25 +94,43 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           .from('products')
           .delete()
           .eq('id', product['id']);
-      setState(() => _productsFuture = _fetchProducts());
+      _fetchData(); // Refresh the grid
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF121212) : const Color(0xFFF9FAFB);
-    final textColor = isDark ? Colors.white : Colors.black87;
+    final bgColor = isDark ? const Color(0xFF121212) : const Color(0xFFF3F4F6);
+    final cardColor = isDark ? Colors.grey[900]! : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF18181b);
+
+    // Apply Search and Category Filters
+    final filteredProducts = _products.where((p) {
+      final matchesSearch = p['name'].toString().toLowerCase().contains(
+        _searchQuery.toLowerCase(),
+      );
+      final matchesCategory =
+          _selectedCategory == 'All Products' ||
+          p['category'] == _selectedCategory;
+      return matchesSearch && matchesCategory;
+    }).toList();
 
     return Scaffold(
       backgroundColor: bgColor,
+
+      // Floating Action Button (+ Add Product)
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: ElevatedButton.icon(
         onPressed: () => context.push('/admin-dashboard'),
         icon: const Icon(Icons.add, color: Colors.white),
         label: const Text(
           "Add Product",
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
         ),
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFF16a34a),
@@ -90,90 +138,476 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
+          elevation: 4,
         ),
       ),
+
+      // Proper GardenRich App Bar with Avatar Dropdown
       appBar: AppBar(
-        backgroundColor: bgColor,
-        elevation: 0,
-        title: const Text(
-          "Admin Dashboard",
-          style: TextStyle(fontWeight: FontWeight.bold),
+        backgroundColor: cardColor,
+        elevation: 1,
+        shadowColor: Colors.black.withOpacity(0.05),
+        title: RichText(
+          text: TextSpan(
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -1.0,
+              fontFamily: 'Roboto',
+            ),
+            children: [
+              TextSpan(
+                text: 'Garden',
+                style: TextStyle(color: textColor),
+              ),
+              const TextSpan(
+                text: 'Rich',
+                style: TextStyle(color: Color(0xFF16a34a)),
+              ),
+            ],
+          ),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () async {
-              await Supabase.instance.client.auth.signOut();
-              if (mounted) context.go('/login');
-            },
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: TextField(
-              onChanged: (val) => setState(() => _searchQuery = val),
-              decoration: InputDecoration(
-                hintText: "Search products...",
-                prefixIcon: const Icon(Icons.search),
-                filled: true,
-                fillColor: isDark ? Colors.grey[900] : Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+          Theme(
+            data: Theme.of(context).copyWith(
+              splashColor: Colors.transparent,
+              highlightColor: Colors.transparent,
+            ),
+            child: PopupMenuButton<String>(
+              offset: const Offset(0, 50),
+              color: isDark ? Colors.grey[900] : Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              onSelected: (value) async {
+                if (value == 'dashboard') {
+                  // Already here
+                } else if (value == 'orders') {
+                  context.push('/admin-orders');
+                } else if (value == 'logout') {
+                  await Supabase.instance.client.auth.signOut();
+                  if (context.mounted) context.go('/login');
+                }
+              },
+              itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                PopupMenuItem<String>(
+                  enabled: false,
+                  height: 30,
+                  child: Text(
+                    "ADMIN PANEL",
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.2,
+                      color: Colors.grey[500],
+                    ),
+                  ),
+                ),
+                PopupMenuItem<String>(
+                  value: 'dashboard',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.grid_view_outlined,
+                        color: isDark ? Colors.grey[300] : Colors.black87,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        "Dashboard",
+                        style: TextStyle(
+                          color: isDark ? Colors.white : Colors.black87,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                PopupMenuItem<String>(
+                  value: 'orders',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.assignment_outlined,
+                        color: isDark ? Colors.grey[300] : Colors.black87,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        "Manage Orders",
+                        style: TextStyle(
+                          color: isDark ? Colors.white : Colors.black87,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const PopupMenuDivider(),
+                PopupMenuItem<String>(
+                  value: 'logout',
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.logout,
+                        color: Colors.redAccent,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      const Text(
+                        "Log Out",
+                        style: TextStyle(
+                          color: Colors.redAccent,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              child: Padding(
+                padding: const EdgeInsets.only(right: 16.0),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 4,
+                  ),
+                  color: Colors.transparent,
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? Colors.white
+                              : const Color(0xFF18181b),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Center(
+                          child: Text(
+                            "A",
+                            style: TextStyle(
+                              color: isDark ? Colors.black : Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        "Admin",
+                        style: TextStyle(
+                          color: textColor,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? Colors.white
+                              : const Color(0xFF18181b),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          "ADMIN",
+                          style: TextStyle(
+                            color: isDark ? Colors.black : Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(Icons.keyboard_arrow_down, color: Colors.grey[500]),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-          Expanded(
-            child: FutureBuilder<List<Map<String, dynamic>>>(
-              future: _productsFuture,
-              builder: (context, snapshot) {
-                if (!snapshot.hasData)
-                  return const Center(child: CircularProgressIndicator());
+        ],
+      ),
 
-                final products = snapshot.data!
-                    .where(
-                      (p) => p['name'].toString().toLowerCase().contains(
-                        _searchQuery.toLowerCase(),
-                      ),
-                    )
-                    .toList();
+      // Hamburger Drawer
+      drawer: Drawer(
+        backgroundColor: cardColor,
+        child: SafeArea(
+          child: _buildSidebarMenu(
+            textColor,
+            isDark,
+            cardColor,
+            isDrawer: true,
+          ),
+        ),
+      ),
 
-                return GridView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    mainAxisSpacing: 16,
-                    crossAxisSpacing: 16,
-                    // 👇 FIXED: This prevents the "Squashing" on restart by forcing a set height
-                    mainAxisExtent: 310,
+      body: Column(
+        children: [
+          // 1. Search Bar
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            child: TextField(
+              onChanged: (val) => setState(() => _searchQuery = val),
+              style: TextStyle(color: textColor),
+              decoration: InputDecoration(
+                hintText: "Search products...",
+                hintStyle: TextStyle(color: Colors.grey[500]),
+                prefixIcon: Icon(Icons.search, color: Colors.grey[500]),
+                filled: true,
+                fillColor: isDark ? Colors.black : Colors.white,
+                contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(
+                    color: isDark ? Colors.grey[800]! : Colors.grey.shade200,
                   ),
-                  itemCount: products.length,
-                  itemBuilder: (context, index) =>
-                      _buildAdminCard(products[index], isDark),
+                ),
+              ),
+            ),
+          ),
+
+          // 2. Category Filter Chips
+          SizedBox(
+            height: 40,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: _categories.length,
+              itemBuilder: (context, index) {
+                final category = _categories[index];
+                final isSelected = _selectedCategory == category;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: ChoiceChip(
+                    label: Text(
+                      category,
+                      style: TextStyle(
+                        color: isSelected
+                            ? (isDark ? Colors.black : Colors.black)
+                            : (isDark ? Colors.white : Colors.black),
+                        fontWeight: isSelected
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                      ),
+                    ),
+                    selected: isSelected,
+                    onSelected: (selected) {
+                      if (selected)
+                        setState(() => _selectedCategory = category);
+                    },
+                    backgroundColor: isDark ? Colors.black : Colors.white,
+                    selectedColor: isDark ? Colors.white : Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                      side: BorderSide(
+                        color: isSelected
+                            ? (isDark ? Colors.white : Colors.black)
+                            : (isDark
+                                  ? Colors.grey[800]!
+                                  : Colors.grey.shade300),
+                      ),
+                    ),
+                  ),
                 );
               },
             ),
+          ),
+          const SizedBox(height: 16),
+
+          // 3. Products Grid
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : filteredProducts.isEmpty
+                ? Center(
+                    child: Text(
+                      "No products found.",
+                      style: TextStyle(color: textColor),
+                    ),
+                  )
+                : GridView.builder(
+                    padding: const EdgeInsets.fromLTRB(
+                      16,
+                      0,
+                      16,
+                      100,
+                    ), // Padding at bottom for FAB
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          mainAxisSpacing: 16,
+                          crossAxisSpacing: 16,
+                          mainAxisExtent:
+                              320, // Provides enough height so it won't overflow
+                        ),
+                    itemCount: filteredProducts.length,
+                    // 👇 Calls the new Stateful Widget for each product!
+                    itemBuilder: (context, index) => AdminProductCard(
+                      key: ValueKey(filteredProducts[index]['id']),
+                      product: filteredProducts[index],
+                      cardColor: cardColor,
+                      textColor: textColor,
+                      isDark: isDark,
+                      onDelete: _deleteProduct,
+                    ),
+                  ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildAdminCard(Map<String, dynamic> product, bool isDark) {
-    final cardColor = isDark ? const Color(0xFF1c1c1e) : Colors.white;
-    final textColor = isDark ? Colors.white : Colors.black87;
-    final variants = product['product_variants'] as List?;
+  // ---------------------------------------------------------------------------
+  // SIDEBAR WIDGET
+  // ---------------------------------------------------------------------------
+  Widget _buildSidebarMenu(
+    Color textColor,
+    bool isDark,
+    Color cardColor, {
+    bool isDrawer = false,
+  }) {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "ADMIN",
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.2,
+                    color: Colors.grey[500],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  "Dashboard",
+                  style: TextStyle(
+                    color: textColor,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ListTile(
+            leading: Icon(Icons.add, color: Colors.grey[600]),
+            title: Text(
+              "Add Product",
+              style: TextStyle(color: textColor, fontWeight: FontWeight.w500),
+            ),
+            onTap: () {
+              if (isDrawer) Navigator.pop(context);
+              context.push('/admin-dashboard');
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.sell_outlined, color: Colors.grey[600]),
+            title: Text(
+              "Categories",
+              style: TextStyle(color: textColor, fontWeight: FontWeight.w500),
+            ),
+            onTap: () {
+              if (isDrawer) Navigator.pop(context);
+              context.push('/admin-categories');
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.settings_outlined, color: Colors.grey[600]),
+            title: Text(
+              "Store Settings",
+              style: TextStyle(color: textColor, fontWeight: FontWeight.w500),
+            ),
+            onTap: () {},
+          ),
+          ListTile(
+            leading: Icon(Icons.assignment_outlined, color: Colors.grey[600]),
+            title: Text(
+              "Orders",
+              style: TextStyle(color: textColor, fontWeight: FontWeight.w500),
+            ),
+            onTap: () {
+              if (isDrawer) Navigator.pop(context);
+              context.push('/admin-orders');
+            },
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8.0),
+            child: Divider(),
+          ),
+          ListTile(
+            leading: Icon(Icons.arrow_back, color: Colors.grey[600]),
+            title: Text(
+              "View Store",
+              style: TextStyle(color: textColor, fontWeight: FontWeight.w500),
+            ),
+            onTap: () {
+              if (isDrawer) Navigator.pop(context);
+              context.go('/home');
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// FIXED: INDEPENDENT STATEFUL WIDGET FOR PRODUCT CARDS
+// ---------------------------------------------------------------------------
+class AdminProductCard extends StatefulWidget {
+  final Map<String, dynamic> product;
+  final Color cardColor;
+  final Color textColor;
+  final bool isDark;
+  final Function(Map<String, dynamic>) onDelete;
+
+  const AdminProductCard({
+    super.key,
+    required this.product,
+    required this.cardColor,
+    required this.textColor,
+    required this.isDark,
+    required this.onDelete,
+  });
+
+  @override
+  State<AdminProductCard> createState() => _AdminProductCardState();
+}
+
+class _AdminProductCardState extends State<AdminProductCard> {
+  int _selectedVariantIndex = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final variants = widget.product['product_variants'] as List? ?? [];
+
+    if (_selectedVariantIndex >= variants.length && variants.isNotEmpty) {
+      _selectedVariantIndex = 0;
+    }
 
     double price = 0;
     double mrp = 0;
     String weight = "1 pc";
     int stock = 0;
 
-    if (variants != null && variants.isNotEmpty) {
-      final v = variants.first;
+    if (variants.isNotEmpty) {
+      final v = variants[_selectedVariantIndex];
       price = double.tryParse(v['price']?.toString() ?? '0') ?? 0;
       mrp = double.tryParse(v['mrp']?.toString() ?? '0') ?? price;
       stock = int.tryParse(v['stock']?.toString() ?? '0') ?? 0;
@@ -186,157 +620,125 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(12),
+        color: widget.cardColor,
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isDark ? Colors.grey[800]! : Colors.grey.shade200,
+          color: widget.isDark ? Colors.grey[800]! : Colors.grey.shade200,
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 1. IMAGE AREA (Takes 55% of the card height)
           Expanded(
-            flex: 55,
+            flex: 12,
             child: Stack(
               fit: StackFit.expand,
               children: [
-                product['image'] != null &&
-                        product['image'].toString().isNotEmpty
-                    ? Image.network(product['image'], fit: BoxFit.cover)
+                widget.product['image'] != null &&
+                        widget.product['image'].toString().isNotEmpty
+                    ? Image.network(widget.product['image'], fit: BoxFit.cover)
                     : Container(
-                        color: isDark ? Colors.grey[850] : Colors.grey[100],
+                        color: widget.isDark
+                            ? Colors.grey[850]
+                            : Colors.grey[100],
                         child: const Icon(Icons.image, color: Colors.grey),
                       ),
 
-                // Best Seller Badge
-                if (product['is_featured'] == true)
-                  Positioned(
-                    top: 8,
-                    left: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(4),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Colors.black12,
-                            blurRadius: 2,
-                            offset: Offset(0, 1),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: const [
-                          Icon(Icons.star, color: Colors.amber, size: 10),
-                          SizedBox(width: 4),
-                          Text(
-                            "BEST SELLER",
-                            style: TextStyle(
-                              fontSize: 8,
-                              fontWeight: FontWeight.w900,
-                              color: Colors.black,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                // Admin Actions
                 Positioned(
                   top: 8,
                   right: 8,
                   child: Column(
                     children: [
-                      _actionBtn(
+                      _actionCircle(
                         Icons.delete_outline,
                         Colors.redAccent,
-                        () => _deleteProduct(product),
+                        () => widget.onDelete(widget.product),
                       ),
                       const SizedBox(height: 6),
-                      _actionBtn(Icons.edit_outlined, Colors.blueAccent, () {}),
+                      _actionCircle(
+                        Icons.edit_outlined,
+                        Colors.blueAccent,
+                        () {},
+                      ),
                     ],
                   ),
                 ),
-
-                // Discount Badge
-                if (discount > 0)
-                  Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF16a34a),
-                        borderRadius: BorderRadius.only(
-                          topLeft: Radius.circular(8),
-                        ),
-                      ),
-                      child: Text(
-                        "$discount% OFF",
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),
 
-          // 2. DYNAMIC TEXT AREA (Takes 45% of the card height)
           Expanded(
-            flex: 45,
+            flex: 12,
             child: Padding(
-              padding: const EdgeInsets.all(10.0),
+              padding: const EdgeInsets.all(12.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  // 👇 TEXT OVERFLOW: Cuts off super long names safely
                   Text(
-                    product['name'] ?? 'Unknown',
+                    widget.product['name'] ?? 'Unknown',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 15,
-                      color: textColor,
+                      color: widget.textColor,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
 
-                  // 👇 FITTEDBOX 1: Safely shrinks the weight container if the phone is narrow
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
+                  // 👇 FIXED: This is your exact code snippet, wrapped in a PopupMenuButton!
+                  PopupMenuButton<int>(
+                    padding: EdgeInsets.zero,
+                    color: widget.cardColor,
+                    onSelected: (int index) {
+                      setState(() => _selectedVariantIndex = index);
+                    },
+                    itemBuilder: (context) => variants.asMap().entries.map((
+                      entry,
+                    ) {
+                      int idx = entry.key;
+                      var v = entry.value;
+                      String w =
+                          "${v['unit_size'] ?? v['qty'] ?? '1'} ${v['unit'] ?? 'pc'}";
+                      return PopupMenuItem<int>(value: idx, child: Text(w));
+                    }).toList(),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
+                        horizontal: 10,
+                        vertical: 8,
                       ),
                       decoration: BoxDecoration(
-                        color: isDark ? Colors.grey[800] : Colors.grey[100],
-                        borderRadius: BorderRadius.circular(6),
+                        color: widget.isDark
+                            ? const Color(0xFF2C2C2E)
+                            : Colors.grey.shade100,
+                        border: Border.all(
+                          color: widget.isDark
+                              ? Colors.grey[700]!
+                              : Colors.grey.shade300,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Text(
-                        "$weight (Only $stock left)",
-                        style: TextStyle(color: textColor, fontSize: 11),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            "$weight (Only $stock left)",
+                            style: TextStyle(
+                              color: widget.textColor,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Icon(
+                            Icons.keyboard_arrow_down,
+                            color: widget.textColor,
+                            size: 16,
+                          ),
+                        ],
                       ),
                     ),
                   ),
 
-                  // 👇 FITTEDBOX 2: Safely shrinks the price row so Rs. doesn't trigger the red stripe
                   FittedBox(
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.centerLeft,
@@ -365,18 +767,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                               ),
                           ],
                         ),
-                        if (savings > 0)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2.0),
-                            child: Text(
-                              "Save Rs. ${savings.toInt()}",
-                              style: const TextStyle(
-                                color: Color(0xFF16a34a),
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
                       ],
                     ),
                   ),
@@ -402,18 +792,4 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       ),
     );
   }
-}
-
-Widget _actionBtn(IconData icon, Color color, VoidCallback onTap) {
-  return GestureDetector(
-    onTap: onTap,
-    child: Container(
-      padding: const EdgeInsets.all(6),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Icon(icon, color: Colors.white, size: 18),
-    ),
-  );
 }

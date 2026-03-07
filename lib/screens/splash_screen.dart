@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:go_router/go_router.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -9,149 +9,66 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  late Animation<Offset> _gardenSlide;
-  late Animation<double> _gardenFade;
-
-  late Animation<Offset> _richSlide;
-  late Animation<double> _richFade;
-
+class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    );
-
-    _gardenSlide = Tween<Offset>(begin: const Offset(0, 0.5), end: Offset.zero)
-        .animate(
-          CurvedAnimation(
-            parent: _controller,
-            curve: const Interval(0.0, 0.6, curve: Curves.easeOutCubic),
-          ),
-        );
-    _gardenFade = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.0, 0.6, curve: Curves.easeIn),
-      ),
-    );
-
-    _richSlide = Tween<Offset>(begin: const Offset(0, 0.5), end: Offset.zero)
-        .animate(
-          CurvedAnimation(
-            parent: _controller,
-            curve: const Interval(0.3, 0.9, curve: Curves.easeOutCubic),
-          ),
-        );
-    _richFade = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.3, 0.9, curve: Curves.easeIn),
-      ),
-    );
-
-    _controller.forward().then((_) async {
-      await Future.delayed(const Duration(milliseconds: 1000));
-
-      if (!mounted) return;
-
-      // Grab the absolute latest user state
-      final user = Supabase.instance.client.auth.currentUser;
-
-      // 1. If not logged in, go to login screen
-      if (user == null || user.email == null) {
-        context.go('/login');
-        return;
-      }
-
-      // 2. If logged in, perfectly check their role using their lowercase EMAIL
-      try {
-        final response = await Supabase.instance.client
-            .from('profiles')
-            .select('role')
-            .eq(
-              'email',
-              user.email!.trim().toLowerCase(),
-            ) // 👈 Bulletproof check!
-            .maybeSingle();
-
-        if (mounted) {
-          if (response != null) {
-            final role =
-                response['role']?.toString().trim().toUpperCase() ?? 'USER';
-
-            if (role == 'ADMIN') {
-              context.go('/admin-home');
-              return;
-            }
-          }
-
-          context.go('/home');
-        }
-      } catch (e) {
-        debugPrint("Splash Routing Error: $e");
-        if (mounted) context.go('/home');
-      }
-    });
+    _checkAuthAndRoute();
   }
 
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
+  Future<void> _checkAuthAndRoute() async {
+    // Add a small delay so your logo shows for a second
+    await Future.delayed(const Duration(seconds: 2));
+
+    final session = Supabase.instance.client.auth.currentSession;
+
+    if (session == null) {
+      // Not logged in -> Go to Login
+      if (mounted) context.go('/login');
+    } else {
+      // Logged in -> Go EXACTLY where the Login Screen goes!
+      if (mounted) context.go('/home');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = isDark ? Colors.grey[900] : Colors.white;
 
     return Scaffold(
-      backgroundColor: bgColor,
+      backgroundColor: isDark
+          ? const Color(0xFF121212)
+          : const Color(0xFF2C3931),
       body: Center(
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            SlideTransition(
-              position: _gardenSlide,
-              child: FadeTransition(
-                opacity: _gardenFade,
-                child: const Text(
-                  'Garden',
-                  style: TextStyle(
-                    fontSize: 56,
-                    fontWeight: FontWeight.w900,
-                    color: Color(0xFF16a34a),
-                    height: 1.0,
-                    letterSpacing: -1.5,
-                    fontFamily: 'Roboto',
-                  ),
+            const Icon(Icons.eco, size: 80, color: Color(0xFF92D050)),
+            const SizedBox(height: 16),
+            RichText(
+              text: TextSpan(
+                style: const TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -1.2,
+                  fontFamily: 'Roboto',
                 ),
+                children: [
+                  TextSpan(
+                    text: 'Garden',
+                    style: TextStyle(
+                      color: isDark ? Colors.white : Colors.white,
+                    ),
+                  ),
+                  const TextSpan(
+                    text: 'Rich',
+                    style: TextStyle(color: Color(0xFF92D050)),
+                  ),
+                ],
               ),
             ),
-            SlideTransition(
-              position: _richSlide,
-              child: FadeTransition(
-                opacity: _richFade,
-                child: Text(
-                  'Rich',
-                  style: TextStyle(
-                    fontSize: 56,
-                    fontWeight: FontWeight.w900,
-                    color: isDark ? Colors.white : const Color(0xFF18181b),
-                    height: 1.0,
-                    letterSpacing: -1.5,
-                    fontFamily: 'Roboto',
-                  ),
-                ),
-              ),
-            ),
+            const SizedBox(height: 24),
+            const CircularProgressIndicator(color: Color(0xFF92D050)),
           ],
         ),
       ),
