@@ -41,8 +41,87 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  // 👇 Custom function to show a beautiful, themed error popup
+  void _showErrorDialog(String title, String message) {
+    // Safety check: Don't try to show a dialog if the screen is already closing
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: _fieldColor,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              const Icon(
+                Icons.error_outline,
+                color: Colors.redAccent,
+                size: 28,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            message,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 15,
+              height: 1.4,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(
+                "OK",
+                style: TextStyle(
+                  color: _primaryGreen,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _authenticate() async {
+    // 1. Quick Validation: Make sure fields aren't empty first!
+    if (_emailController.text.trim().isEmpty ||
+        _passwordController.text.trim().isEmpty) {
+      _showErrorDialog(
+        "Missing Info",
+        "Please enter both your email and password.",
+      );
+      return;
+    }
+    if (!_isLogin &&
+        (_nameController.text.trim().isEmpty ||
+            _mobileController.text.trim().isEmpty)) {
+      _showErrorDialog(
+        "Missing Info",
+        "Please fill out all fields to create an account.",
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
+
     try {
       if (_isLogin) {
         // Logging in
@@ -63,13 +142,55 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
 
-      // Route perfectly to the Home Screen!
-      if (mounted) context.go('/home');
+      // 👇 THE CRITICAL ROUTING UPDATE 👇
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user != null && user.email != null) {
+        // Ask Supabase what role this user is
+        final profileResponse = await Supabase.instance.client
+            .from('profiles')
+            .select('role')
+            .eq('email', user.email!.trim().toLowerCase())
+            .maybeSingle();
+
+        final role =
+            profileResponse?['role']?.toString().toUpperCase() ?? 'USER';
+
+        // Route perfectly based on role!
+        if (mounted) {
+          if (role == 'ADMIN') {
+            context.go('/admin-home');
+          } else {
+            context.go('/home');
+          }
+        }
+      }
     } catch (e) {
+      // 👇 BULLETPROOF ERROR CATCHING
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
-        );
+        String title = "Authentication Failed";
+        String friendlyMessage = "Something went wrong. Please try again.";
+
+        if (e is AuthException) {
+          final errorMessage = e.message.toLowerCase();
+
+          if (errorMessage.contains("invalid login credentials")) {
+            friendlyMessage =
+                "The email or password you entered is incorrect. Please double-check and try again.";
+          } else if (errorMessage.contains("already registered")) {
+            friendlyMessage =
+                "An account with this email already exists. Please log in instead.";
+          } else if (errorMessage.contains("password should be at least")) {
+            friendlyMessage =
+                "Your password is too weak. Please use at least 6 characters.";
+          } else {
+            friendlyMessage = e.message;
+          }
+        } else {
+          title = "Oops!";
+          friendlyMessage = e.toString();
+        }
+
+        _showErrorDialog(title, friendlyMessage);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);

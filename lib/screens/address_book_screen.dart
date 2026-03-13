@@ -192,7 +192,7 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
                                         content: Text("Address saved!"),
-                                        backgroundColor: Color(0xFF16a34a),
+                                        backgroundColor: Color(0xFF92D050),
                                       ),
                                     );
                                   }
@@ -265,7 +265,7 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFF16a34a), width: 1),
+            borderSide: const BorderSide(color: Color(0xFF92D050), width: 1),
           ),
         ),
       ),
@@ -293,7 +293,7 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showAddAddressSheet(context),
-        backgroundColor: const Color(0xFF16a34a),
+        backgroundColor: Color(0xFF92D050),
         icon: const Icon(Icons.add, color: Colors.white),
         label: const Text(
           "Add New",
@@ -376,7 +376,7 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
                       children: [
                         Icon(
                           Icons.location_on,
-                          color: const Color(0xFF16a34a),
+                          color: const Color(0xFF92D050),
                           size: 20,
                         ),
                         const SizedBox(width: 8),

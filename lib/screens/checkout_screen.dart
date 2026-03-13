@@ -12,16 +12,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   List<Map<String, dynamic>> _cartItems = [];
   bool _isInitialized = false;
 
+  // 👇 The threshold for free shipping!
+  final double _freeShippingThreshold = 500.0;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_isInitialized) {
       final rawItems =
           GoRouterState.of(context).extra as List<Map<String, dynamic>>? ?? [];
-
       Map<String, Map<String, dynamic>> grouped = {};
       for (var item in rawItems) {
-        String id = item['id'].toString();
+        String id = item['variant_id'].toString();
         if (grouped.containsKey(id)) {
           grouped[id]!['qty'] = (grouped[id]!['qty'] as int) + 1;
         } else {
@@ -34,7 +36,146 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
-  // 👇 ADDED: Separated Subtotal and Shipping calculations
+  void _showStockLimitPopup(
+    BuildContext context,
+    int limit,
+    String itemName,
+    String weightLabel,
+  ) {
+    final String productDescription =
+        "${weightLabel.isNotEmpty ? '$weightLabel ' : ''}$itemName";
+
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: "Stock Limit",
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, anim1, anim2) => const SizedBox(),
+      transitionBuilder: (context, anim1, anim2, child) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+
+        final curvedAnimation = CurvedAnimation(
+          parent: anim1,
+          curve: Curves.easeOutBack,
+        );
+
+        return ScaleTransition(
+          scale: Tween<double>(begin: 0.8, end: 1.0).animate(curvedAnimation),
+          child: FadeTransition(
+            opacity: anim1,
+            child: AlertDialog(
+              backgroundColor: Colors.transparent,
+              contentPadding: EdgeInsets.zero,
+              elevation: 0,
+              content: Container(
+                width: 320,
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1c1c1e) : Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.2),
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withOpacity(0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.shopping_basket_outlined,
+                        color: Colors.orange,
+                        size: 40,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      "High Demand! 🔥",
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    RichText(
+                      textAlign: TextAlign.center,
+                      text: TextSpan(
+                        style: TextStyle(
+                          fontSize: 14,
+                          height: 1.5,
+                          color: isDark ? Colors.grey[400] : Colors.grey[600],
+                        ),
+                        children: [
+                          const TextSpan(
+                            text:
+                                "You've added all our stock to your cart. We currently only have ",
+                          ),
+                          TextSpan(
+                            text: "$limit $productDescription",
+                            style: TextStyle(
+                              color: isDark ? Colors.white : Colors.black87,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const TextSpan(text: " available right now."),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF92D050),
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text(
+                          "Got it, thanks!",
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  List<Map<String, dynamic>> _flattenCart() {
+    List<Map<String, dynamic>> flatList = [];
+    for (var item in _cartItems) {
+      int qty = item['qty'] as int? ?? 1;
+      for (int i = 0; i < qty; i++) {
+        var flatItem = Map<String, dynamic>.from(item);
+        flatItem.remove('qty');
+        flatList.add(flatItem);
+      }
+    }
+    return flatList;
+  }
+
   double get _subtotalAmount {
     double total = 0;
     for (var item in _cartItems) {
@@ -44,7 +185,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return total;
   }
 
-  double get _shippingFee => 40.0; // Matches your website!
+  // 👇 Shipping is FREE if over threshold!
+  double get _shippingFee =>
+      _subtotalAmount >= _freeShippingThreshold ? 0.0 : 40.0;
 
   double get _totalAmount {
     if (_cartItems.isEmpty) return 0.0;
@@ -62,355 +205,858 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF121212) : const Color(0xFFF9F9F9);
-    final cardColor = isDark ? Colors.grey[900] : Colors.white;
+    final bgColor = isDark ? const Color(0xFF121212) : const Color(0xFFF9FAFB);
+    final cardColor = isDark ? const Color(0xFF1C1C1E) : Colors.white;
     final textColor = isDark ? Colors.white : Colors.black87;
+    const greenColor = Color(0xFF92D050);
 
-    return Scaffold(
-      backgroundColor: bgColor,
-      appBar: AppBar(
+    // Free Shipping Progress Calculation
+    double progress = (_subtotalAmount / _freeShippingThreshold).clamp(
+      0.0,
+      1.0,
+    );
+    double remaining = _freeShippingThreshold - _subtotalAmount;
+
+    // ignore: deprecated_member_use
+    return WillPopScope(
+      onWillPop: () async {
+        context.pop(_flattenCart());
+        return false;
+      },
+      child: Scaffold(
         backgroundColor: bgColor,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: textColor),
-          onPressed: () => context.pop(),
-        ),
-      ),
-      body: _cartItems.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.shopping_cart_outlined,
-                    size: 80,
-                    color: Colors.grey[400],
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    "Your cart is empty",
-                    style: TextStyle(fontSize: 18, color: Colors.grey[600]),
-                  ),
-                ],
+        appBar: AppBar(
+          backgroundColor: bgColor,
+          elevation: 0,
+          titleSpacing: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: greenColor),
+            onPressed: () => context.pop(_flattenCart()),
+          ),
+          title: GestureDetector(
+            onTap: () => context.pop(_flattenCart()),
+            child: const Text(
+              "Continue Shopping",
+              style: TextStyle(
+                color: greenColor,
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
               ),
-            )
-          : Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20.0,
-                    vertical: 10.0,
-                  ),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: RichText(
-                      text: TextSpan(
-                        style: TextStyle(
-                          color: textColor,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        children: [
-                          const TextSpan(text: "Your Cart "),
-                          TextSpan(
-                            text: "($_totalItems Items)",
-                            style: TextStyle(
-                              color: Colors.grey[500],
-                              fontSize: 16,
-                              fontWeight: FontWeight.normal,
-                            ),
-                          ),
-                        ],
-                      ),
+            ),
+          ),
+        ),
+        body: _cartItems.isEmpty
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.shopping_cart_outlined,
+                      size: 80,
+                      color: Colors.grey[400],
                     ),
-                  ),
+                    const SizedBox(height: 16),
+                    Text(
+                      "Your cart is empty",
+                      style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+                    ),
+                  ],
                 ),
-
-                Expanded(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    itemCount: _cartItems.length,
-                    itemBuilder: (context, index) {
-                      final item = _cartItems[index];
-                      // Format item price to remove decimals
-                      final itemPrice = (item['price'] as num?)?.toInt() ?? 0;
-
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: cardColor,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: isDark
-                                ? Colors.grey[800]!
-                                : Colors.grey.shade200,
+              )
+            : Column(
+                children: [
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.all(16.0),
+                      children: [
+                        // --- TITLE ---
+                        RichText(
+                          text: TextSpan(
+                            style: TextStyle(
+                              color: textColor,
+                              fontSize: 28,
+                              fontWeight: FontWeight.w900,
+                            ),
+                            children: [
+                              const TextSpan(text: "Your Cart "),
+                              TextSpan(
+                                text: "($_totalItems items)",
+                                style: TextStyle(
+                                  color: Colors.grey[500],
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.normal,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        child: Row(
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: item['image'] != null
-                                  ? Image.network(
-                                      item['image'],
-                                      width: 60,
-                                      height: 60,
-                                      fit: BoxFit.cover,
-                                    )
-                                  : Container(
-                                      width: 60,
-                                      height: 60,
-                                      color: Colors.grey[200],
-                                    ),
-                            ),
-                            const SizedBox(width: 16),
+                        const SizedBox(height: 24),
 
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                        // --- FREE SHIPPING PROGRESS BAR ---
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: cardColor,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isDark
+                                  ? Colors.grey[800]!
+                                  : Colors.grey.shade200,
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Text(
-                                    item['name'] ?? "Unknown",
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
-                                      color: textColor,
+                                  Expanded(
+                                    child: RichText(
+                                      text: TextSpan(
+                                        style: TextStyle(
+                                          color: textColor,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        children: remaining > 0
+                                            ? [
+                                                const TextSpan(text: "Add "),
+                                                TextSpan(
+                                                  text:
+                                                      "Rs. ${remaining.toInt()}",
+                                                  style: const TextStyle(
+                                                    color: greenColor,
+                                                  ),
+                                                ),
+                                                const TextSpan(
+                                                  text:
+                                                      " more for FREE shipping!",
+                                                ),
+                                              ]
+                                            : [
+                                                const TextSpan(
+                                                  text:
+                                                      "You've unlocked FREE shipping!",
+                                                  style: TextStyle(
+                                                    color: greenColor,
+                                                  ),
+                                                ),
+                                              ],
+                                      ),
                                     ),
                                   ),
-                                  const SizedBox(height: 4),
                                   Text(
-                                    item['weight']?.toString() ?? "",
+                                    "Rs. ${_subtotalAmount.toInt()} / ${_freeShippingThreshold.toInt()}",
+                                    style: TextStyle(
+                                      color: Colors.grey[500],
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: LinearProgressIndicator(
+                                  value: progress,
+                                  minHeight: 8,
+                                  backgroundColor: isDark
+                                      ? Colors.grey[800]
+                                      : Colors.grey[200],
+                                  valueColor:
+                                      const AlwaysStoppedAnimation<Color>(
+                                        greenColor,
+                                      ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+
+                        // --- CART ITEMS ---
+                        ..._cartItems.map((item) {
+                          int index = _cartItems.indexOf(item);
+                          final itemPrice =
+                              (item['price'] as num?)?.toInt() ?? 0;
+                          final originalPrice =
+                              (item['original_price'] as num?)?.toInt() ??
+                              itemPrice;
+                          final bool hasDiscount =
+                              originalPrice > itemPrice && originalPrice > 0;
+                          final int discountPercent = hasDiscount
+                              ? (((originalPrice - itemPrice) / originalPrice) *
+                                        100)
+                                    .round()
+                              : 0;
+
+                          int stockLimit = 999;
+                          if (item['stock_limit'] != null) {
+                            stockLimit = item['stock_limit'] as int;
+                          } else if (item['product_variants'] != null) {
+                            try {
+                              final variant = (item['product_variants'] as List)
+                                  .firstWhere(
+                                    (v) => v['id'] == item['variant_id'],
+                                  );
+                              stockLimit =
+                                  int.tryParse(
+                                    variant['stock']?.toString() ?? '0',
+                                  ) ??
+                                  999;
+                            } catch (e) {}
+                          }
+
+                          final String imageUrl =
+                              item['image']?.toString() ?? "";
+                          final bool hasValidImage =
+                              imageUrl.isNotEmpty &&
+                              imageUrl.startsWith('http');
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: cardColor,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: isDark
+                                    ? Colors.grey[800]!
+                                    : Colors.grey.shade200,
+                              ),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                // Item Image
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Container(
+                                    width: 70,
+                                    height: 70,
+                                    color: isDark
+                                        ? Colors.black
+                                        : Colors.grey[100],
+                                    child: hasValidImage
+                                        ? Image.network(
+                                            imageUrl,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (c, e, s) => Icon(
+                                              Icons.image_not_supported,
+                                              color: Colors.grey[400],
+                                            ),
+                                          )
+                                        : Icon(
+                                            Icons.image,
+                                            color: Colors.grey[400],
+                                          ),
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+
+                                // Item Details
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        item['name'] ?? "Unknown",
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
+                                          color: textColor,
+                                        ),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        item['weight']?.toString() ?? "",
+                                        style: TextStyle(
+                                          color: Colors.grey[500],
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+
+                                      // Price Row (Uses Wrap to prevent text overflow)
+                                      Wrap(
+                                        crossAxisAlignment:
+                                            WrapCrossAlignment.center,
+                                        spacing: 6,
+                                        runSpacing: 4,
+                                        children: [
+                                          Text(
+                                            "Rs. $itemPrice",
+                                            style: const TextStyle(
+                                              color: greenColor,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                          if (hasDiscount) ...[
+                                            Text(
+                                              "Rs. $originalPrice",
+                                              style: const TextStyle(
+                                                color: Colors.grey,
+                                                fontSize: 12,
+                                                decoration:
+                                                    TextDecoration.lineThrough,
+                                              ),
+                                            ),
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 4,
+                                                    vertical: 2,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: greenColor.withOpacity(
+                                                  0.1,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
+                                              ),
+                                              child: Text(
+                                                "$discountPercent% OFF",
+                                                style: const TextStyle(
+                                                  color: greenColor,
+                                                  fontSize: 9,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+
+                                      // Stock Warning
+                                      if (stockLimit <= 5)
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            top: 4.0,
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              const Icon(
+                                                Icons.warning_amber_rounded,
+                                                color: Colors.orange,
+                                                size: 12,
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                "Only $stockLimit left!",
+                                                style: const TextStyle(
+                                                  color: Colors.orange,
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+
+                                // Subtotal & Qty Pill
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      "SUBTOTAL",
+                                      style: TextStyle(
+                                        color: Colors.grey[500],
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 1,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      "Rs. ${itemPrice * (item['qty'] as int)}",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 14,
+                                        color: textColor,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+
+                                    // The Black Qty Pill
+                                    Container(
+                                      decoration: BoxDecoration(
+                                        color: isDark
+                                            ? Colors.grey[800]
+                                            : const Color(0xFF18181B),
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          InkWell(
+                                            onTap: () {
+                                              setState(() {
+                                                if (item['qty'] > 1) {
+                                                  item['qty']--;
+                                                } else {
+                                                  _cartItems.removeAt(index);
+                                                }
+                                              });
+                                            },
+                                            child: const Padding(
+                                              padding: EdgeInsets.symmetric(
+                                                horizontal: 12,
+                                                vertical: 6,
+                                              ),
+                                              child: Text(
+                                                "-",
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          Text(
+                                            "${item['qty']}",
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                          InkWell(
+                                            onTap: () {
+                                              if (item['qty'] >= stockLimit) {
+                                                _showStockLimitPopup(
+                                                  context,
+                                                  stockLimit,
+                                                  item['name']?.toString() ??
+                                                      "This item",
+                                                  item['weight']?.toString() ??
+                                                      "",
+                                                );
+                                                return;
+                                              }
+                                              setState(() => item['qty']++);
+                                            },
+                                            child: const Padding(
+                                              padding: EdgeInsets.symmetric(
+                                                horizontal: 12,
+                                                vertical: 6,
+                                              ),
+                                              child: Text(
+                                                "+",
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+
+                        const SizedBox(height: 24),
+
+                        // --- ORDER SUMMARY CARD ---
+                        Container(
+                          padding: const EdgeInsets.all(24),
+                          decoration: BoxDecoration(
+                            color: cardColor,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: isDark
+                                  ? Colors.grey[800]!
+                                  : Colors.grey.shade200,
+                            ),
+                            boxShadow: [
+                              if (!isDark)
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.03),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 5),
+                                ),
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "Order Summary",
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                  color: textColor,
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+
+                              // Itemized List
+                              ..._cartItems.map((item) {
+                                final itemPrice =
+                                    (item['price'] as num?)?.toInt() ?? 0;
+                                final qty = item['qty'] as int;
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 12.0),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: RichText(
+                                          text: TextSpan(
+                                            style: TextStyle(
+                                              color: Colors.grey[600],
+                                              fontSize: 13,
+                                            ),
+                                            children: [
+                                              TextSpan(
+                                                text: "${item['name']} ",
+                                              ),
+                                              TextSpan(
+                                                text: "(${item['weight']}) ",
+                                                style: TextStyle(
+                                                  color: Colors.grey[400],
+                                                  fontSize: 11,
+                                                ),
+                                              ),
+                                              TextSpan(
+                                                text: "×$qty",
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        "Rs. ${itemPrice * qty}",
+                                        style: TextStyle(
+                                          color: textColor,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }),
+
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                ),
+                                child: Divider(
+                                  color: isDark
+                                      ? Colors.grey[800]
+                                      : Colors.grey[200],
+                                ),
+                              ),
+
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    "Subtotal",
+                                    style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  Text(
+                                    "Rs. ${_subtotalAmount.toInt()}",
+                                    style: TextStyle(
+                                      color: textColor,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    "Shipping",
+                                    style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  Text(
+                                    _shippingFee == 0
+                                        ? "FREE"
+                                        : "Rs. ${_shippingFee.toInt()}",
+                                    style: TextStyle(
+                                      color: _shippingFee == 0
+                                          ? greenColor
+                                          : textColor,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    "Taxes",
+                                    style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  Text(
+                                    "Included",
                                     style: TextStyle(
                                       color: Colors.grey[500],
                                       fontSize: 12,
                                     ),
                                   ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    "Rs. $itemPrice", // Clean formatting
-                                    style: const TextStyle(
-                                      color: Color(0xFF16a34a),
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
-                                    ),
-                                  ),
                                 ],
                               ),
-                            ),
 
-                            Container(
-                              decoration: BoxDecoration(
-                                border: Border.all(color: Colors.grey.shade300),
-                                borderRadius: BorderRadius.circular(8),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
+                                child: Divider(
+                                  color: isDark
+                                      ? Colors.grey[800]
+                                      : Colors.grey[200],
+                                ),
                               ),
-                              child: Row(
+
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 children: [
-                                  InkWell(
-                                    onTap: () {
-                                      setState(() {
-                                        if (item['qty'] > 1) {
-                                          item['qty']--;
-                                        } else {
-                                          _cartItems.removeAt(index);
-                                        }
-                                      });
-                                    },
-                                    child: const Padding(
-                                      padding: EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 8,
-                                      ),
-                                      child: Text(
-                                        "-",
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
                                   Text(
-                                    "${item['qty']}",
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
+                                    "Total Amount",
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w900,
+                                      color: textColor,
                                     ),
                                   ),
-                                  InkWell(
-                                    onTap: () {
-                                      setState(() {
-                                        item['qty']++;
-                                      });
-                                    },
-                                    child: const Padding(
-                                      padding: EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 8,
-                                      ),
-                                      child: Text(
-                                        "+",
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text(
+                                        "Rs. ${_totalAmount.toInt()}",
                                         style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
+                                          fontSize: 22,
+                                          fontWeight: FontWeight.w900,
+                                          color: textColor,
                                         ),
                                       ),
-                                    ),
+                                      Text(
+                                        "Inclusive of all taxes",
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.grey[500],
+                                          fontStyle: FontStyle.italic,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
 
-                Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: cardColor,
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(24),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, -5),
-                      ),
-                    ],
-                  ),
-                  child: SafeArea(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          "Order Summary",
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: textColor,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              "Subtotal",
-                              style: TextStyle(color: Colors.grey[600]),
-                            ),
-                            Text(
-                              "Rs. ${_subtotalAmount.toInt()}", // 👇 FIXED: toInt() removes .0
-                              style: TextStyle(
-                                color: textColor,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              "Shipping",
-                              style: TextStyle(color: Colors.grey[600]),
-                            ),
-                            Text(
-                              "Rs. ${_shippingFee.toInt()}", // 👇 FIXED: Shows Rs. 40
-                              style: TextStyle(
-                                color: textColor,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 16.0),
-                          child: Divider(),
-                        ),
-
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              "Total Amount",
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: textColor,
-                              ),
-                            ),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  "Rs. ${_totalAmount.toInt()}", // 👇 FIXED: toInt() removes .0
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w900,
-                                    color: textColor,
-                                  ),
+                              const SizedBox(height: 30),
+                              Text(
+                                "PROMO CODE",
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 1.2,
+                                  color: Colors.grey[500],
                                 ),
-                                Text(
-                                  "Inclusive of all taxes",
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.grey[500],
-                                    fontStyle: FontStyle.italic,
-                                  ),
+                              ),
+                              const SizedBox(height: 8),
+                              Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: isDark
+                                      ? Colors.grey[800]
+                                      : Colors.grey[100],
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
-                              ],
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: textColor,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        decoration: InputDecoration(
+                                          hintText: "ENTER CODE",
+                                          hintStyle: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey[400],
+                                            fontWeight: FontWeight.normal,
+                                          ),
+                                          contentPadding:
+                                              const EdgeInsets.symmetric(
+                                                horizontal: 12,
+                                              ),
+                                          border: InputBorder.none,
+                                        ),
+                                      ),
+                                    ),
+                                    SizedBox(
+                                      height: 36,
+                                      child: ElevatedButton(
+                                        onPressed: () {},
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: isDark
+                                              ? Colors.grey[700]
+                                              : Colors.black,
+                                          foregroundColor: Colors.white,
+                                          elevation: 0,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              6,
+                                            ),
+                                          ),
+                                        ),
+                                        child: const Text(
+                                          "Apply",
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 30),
+
+                        // --- TRUST BADGES ---
+                        // 👇 Uses Wrap so it safely flows to the next line on huge fonts!
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          spacing: 16,
+                          runSpacing: 12,
+                          children: [
+                            _buildTrustBadge(
+                              Icons.verified_user_outlined,
+                              "Secure",
+                              greenColor,
+                            ),
+                            _buildTrustBadge(
+                              Icons.local_shipping_outlined,
+                              "Fast Delivery",
+                              greenColor,
+                            ),
+                            _buildTrustBadge(
+                              Icons.currency_rupee_outlined,
+                              "COD",
+                              greenColor,
                             ),
                           ],
                         ),
-                        const SizedBox(height: 20),
-
-                        ElevatedButton(
-                          onPressed: () async {
-                            if (_cartItems.isEmpty) return;
-
-                            final success = await context.push(
-                              '/place-order',
-                              extra: {
-                                'items': _cartItems,
-                                'total': _totalAmount,
-                              },
-                            );
-
-                            if (success == true && context.mounted) {
-                              context.pop(true);
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF1b5e20),
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          child: const Text(
-                            "PROCEED TO CHECKOUT",
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ),
+                        const SizedBox(height: 100), // Padding for sticky bar
                       ],
                     ),
                   ),
+                ],
+              ),
+
+        // --- STICKY BOTTOM CHECKOUT BUTTON ---
+        bottomSheet: _cartItems.isEmpty
+            ? null
+            : Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: bgColor,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, -5),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+                child: SafeArea(
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        final success = await context.push(
+                          '/place-order',
+                          extra: {'items': _cartItems, 'total': _totalAmount},
+                        );
+                        if (success == true && context.mounted) {
+                          context.pop(true);
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: greenColor,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        "PROCEED TO CHECKOUT",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+      ),
+    );
+  }
+
+  Widget _buildTrustBadge(IconData icon, String label, Color iconColor) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: iconColor),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            color: Colors.grey[600],
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
     );
   }
 }

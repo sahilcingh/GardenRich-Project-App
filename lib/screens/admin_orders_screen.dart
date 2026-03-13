@@ -13,6 +13,9 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
   final client = Supabase.instance.client;
   String _selectedFilter = 'All Orders';
 
+  List<Map<String, dynamic>> _orders = [];
+  bool _isLoading = true;
+
   final List<String> _filters = [
     'All Orders',
     'Pending',
@@ -22,12 +25,40 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
     'Cancelled',
   ];
 
-  // 👇 FIXED: Safe date formatter that uses 'MMM' instead of 'Mar'
+  @override
+  void initState() {
+    super.initState();
+    _fetchOrders();
+  }
+
+  Future<void> _fetchOrders() async {
+    try {
+      final response = await client
+          .from('orders')
+          .select()
+          .order('created_at', ascending: false);
+      if (mounted) {
+        setState(() {
+          // 👇 CRITICAL FIX: .map((e) => Map.from(e)) makes the data modifiable
+          // so it doesn't crash when we try to update the status locally!
+          _orders = response.map((e) => Map<String, dynamic>.from(e)).toList();
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error fetching orders: $e");
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   String _formatDate(String? dateString) {
     if (dateString == null || dateString.isEmpty) return 'Unknown Date';
     try {
-      final dateTime = DateTime.parse(dateString).toLocal();
-      // 'MMM' correctly gives Jan, Feb, Mar, etc.
+      // 👇 THE FIX: Force Dart to treat the raw database time as UTC
+      String safeDate = dateString;
+      if (!safeDate.endsWith('Z')) safeDate += 'Z';
+
+      final dateTime = DateTime.parse(safeDate).toLocal();
       return DateFormat('dd MMM yyyy, hh:mm a').format(dateTime);
     } catch (e) {
       return dateString;
@@ -36,22 +67,109 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
 
   Future<void> _updateOrderStatus(String orderId, String newStatus) async {
     try {
-      await client
+      // 1. Update the database and FORCE a return value (.select())
+      // to verify it wasn't blocked by Supabase RLS permissions.
+      final res = await client
           .from('orders')
           .update({'status': newStatus.toLowerCase()})
-          .eq('id', orderId);
+          .eq('id', orderId)
+          .select();
+
+      if (res.isEmpty) {
+        throw Exception(
+          "Update blocked. Please check your Supabase RLS 'UPDATE' policies for the orders table.",
+        );
+      }
+
+      // 2. Safely update the local UI
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Order updated to $newStatus"),
-            backgroundColor: const Color(0xFF16a34a),
+        setState(() {
+          final index = _orders.indexWhere(
+            (o) => o['id'].toString() == orderId,
+          );
+          if (index != -1) {
+            _orders[index]['status'] = newStatus.toLowerCase();
+          }
+        });
+
+        // 👇 SUCCESS POPUP INSTEAD OF SNACKBAR
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Color(0xFF92D050)),
+                SizedBox(width: 10),
+                Text(
+                  "Status Updated",
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                ),
+              ],
+            ),
+            content: Text(
+              "The order has been successfully marked as $newStatus.",
+              style: const TextStyle(fontSize: 14),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text(
+                  "OK",
+                  style: TextStyle(
+                    color: Color(0xFF92D050),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
           ),
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
+        // 👇 ERROR POPUP INSTEAD OF SNACKBAR
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: const Row(
+              children: [
+                Icon(Icons.error_outline, color: Colors.redAccent),
+                SizedBox(width: 10),
+                Text(
+                  "Update Failed",
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                ),
+              ],
+            ),
+            content: Text(
+              e.toString().replaceAll("Exception: ", ""), // Cleans up the text
+              style: const TextStyle(fontSize: 14),
+            ),
+            actions: [
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.redAccent,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Text(
+                  "CLOSE",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
         );
       }
     }
@@ -63,6 +181,88 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
     final bgColor = isDark ? const Color(0xFF121212) : const Color(0xFFF3F4F6);
     final cardColor = isDark ? Colors.grey[900]! : Colors.white;
     final textColor = isDark ? Colors.white : Colors.black87;
+
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: bgColor,
+        body: const Center(
+          child: CircularProgressIndicator(color: Color(0xFF92D050)),
+        ),
+      );
+    }
+
+    // --- KPI Calculations (Timezone Adjusted Automatically) ---
+    // 👇 Just use standard DateTime.now(), it automatically uses your phone's IST!
+    final now = DateTime.now();
+
+    int todayOrders = 0;
+    double todayRevenue = 0;
+    int monthOrders = 0;
+    double monthRevenue = 0;
+
+    Map<String, int> counts = {
+      'All Orders': _orders.length,
+      'Pending': 0,
+      'Confirmed': 0,
+      'Shipped': 0,
+      'Delivered': 0,
+      'Cancelled': 0,
+    };
+
+    for (var order in _orders) {
+      final dateString = order['created_at']?.toString();
+      DateTime? date;
+
+      if (dateString != null && dateString.isNotEmpty) {
+        try {
+          // 👇 Apply the exact same "Z" trick here for perfect KPI matching!
+          String safeDate = dateString;
+          if (!safeDate.endsWith('Z')) safeDate += 'Z';
+          date = DateTime.parse(safeDate).toLocal();
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      final total =
+          double.tryParse(
+            order['total']?.toString() ??
+                order['total_amount']?.toString() ??
+                '0',
+          ) ??
+          0;
+      final rawStatus = (order['status']?.toString() ?? 'pending')
+          .toLowerCase();
+
+      String statusKey = 'Pending';
+      for (var f in _filters) {
+        if (f.toLowerCase() == rawStatus) {
+          statusKey = f;
+          break;
+        }
+      }
+
+      if (counts.containsKey(statusKey)) {
+        counts[statusKey] = counts[statusKey]! + 1;
+      }
+
+      if (date != null) {
+        if (date.year == now.year && date.month == now.month) {
+          monthOrders++;
+          monthRevenue += total;
+          if (date.day == now.day) {
+            todayOrders++;
+            todayRevenue += total;
+          }
+        }
+      }
+    }
+
+    final displayedOrders = _orders.where((order) {
+      if (_selectedFilter == 'All Orders') return true;
+      final status = (order['status']?.toString() ?? 'pending').toLowerCase();
+      return status == _selectedFilter.toLowerCase();
+    }).toList();
 
     return Scaffold(
       backgroundColor: bgColor,
@@ -92,226 +292,129 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: StreamBuilder<List<Map<String, dynamic>>>(
-        stream: client
-            .from('orders')
-            .stream(primaryKey: ['id'])
-            .order('created_at', ascending: false),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting &&
-              !snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(
-              child: Text(
-                "Error loading orders",
-                style: TextStyle(color: textColor),
-              ),
-            );
-          }
-
-          final orders = snapshot.data ?? [];
-
-          // KPI Calculations
-          final now = DateTime.now();
-          int todayOrders = 0;
-          double todayRevenue = 0;
-          int monthOrders = 0;
-          double monthRevenue = 0;
-
-          // Filter Counters
-          Map<String, int> counts = {
-            'All Orders': orders.length,
-            'Pending': 0,
-            'Confirmed': 0,
-            'Shipped': 0,
-            'Delivered': 0,
-            'Cancelled': 0,
-          };
-
-          for (var order in orders) {
-            final dateString = order['created_at']?.toString();
-            DateTime? date;
-
-            if (dateString != null && dateString.isNotEmpty) {
-              try {
-                date = DateTime.parse(dateString).toLocal();
-              } catch (e) {
-                // Ignore parse errors for KPI calculation
-              }
-            }
-
-            final total =
-                double.tryParse(
-                  order['total']?.toString() ??
-                      order['total_amount']?.toString() ??
-                      '0',
-                ) ??
-                0;
-
-            final rawStatus = (order['status']?.toString() ?? 'pending')
-                .toLowerCase();
-
-            String statusKey = 'Pending';
-            for (var f in _filters) {
-              if (f.toLowerCase() == rawStatus) {
-                statusKey = f;
-                break;
-              }
-            }
-
-            if (counts.containsKey(statusKey)) {
-              counts[statusKey] = counts[statusKey]! + 1;
-            }
-
-            // Time KPIs
-            if (date != null) {
-              if (date.year == now.year && date.month == now.month) {
-                monthOrders++;
-                monthRevenue += total;
-                if (date.day == now.day) {
-                  todayOrders++;
-                  todayRevenue += total;
-                }
-              }
-            }
-          }
-
-          // Filter the list for display
-          final displayedOrders = orders.where((order) {
-            if (_selectedFilter == 'All Orders') return true;
-            final status = (order['status']?.toString() ?? 'pending')
-                .toLowerCase();
-            return status == _selectedFilter.toLowerCase();
-          }).toList();
-
-          return CustomScrollView(
-            slivers: [
-              // KPIs Grid
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: GridView.count(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    childAspectRatio: 1.5,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    children: [
-                      _buildKPICard(
-                        "TODAY's ORDERS",
-                        todayOrders.toString(),
-                        Icons.access_time,
-                        Colors.amber,
-                        cardColor,
-                        isDark,
-                      ),
-                      _buildKPICard(
-                        "TODAY's REVENUE",
-                        "Rs. ${todayRevenue.toInt()}",
-                        Icons.attach_money,
-                        const Color(0xFF16a34a),
-                        cardColor,
-                        isDark,
-                      ),
-                      _buildKPICard(
-                        "THIS MONTH",
-                        monthOrders.toString(),
-                        Icons.calendar_today,
-                        Colors.blue,
-                        cardColor,
-                        isDark,
-                      ),
-                      _buildKPICard(
-                        "MONTH REVENUE",
-                        "Rs. ${monthRevenue.toInt()}",
-                        Icons.trending_up,
-                        Colors.purple,
-                        cardColor,
-                        isDark,
-                      ),
-                    ],
-                  ),
+      body: RefreshIndicator(
+        onRefresh: _fetchOrders,
+        child: CustomScrollView(
+          physics:
+              const AlwaysScrollableScrollPhysics(), // Ensures pull-to-refresh always works
+          slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: GridView.count(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 1.5,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: [
+                    _buildKPICard(
+                      "TODAY's ORDERS",
+                      todayOrders.toString(),
+                      Icons.access_time,
+                      Colors.amber,
+                      cardColor,
+                      isDark,
+                    ),
+                    _buildKPICard(
+                      "TODAY's REVENUE",
+                      "Rs. ${todayRevenue.toInt()}",
+                      Icons.attach_money,
+                      const Color(0xFF92D050),
+                      cardColor,
+                      isDark,
+                    ),
+                    _buildKPICard(
+                      "THIS MONTH",
+                      monthOrders.toString(),
+                      Icons.calendar_today,
+                      Colors.blue,
+                      cardColor,
+                      isDark,
+                    ),
+                    _buildKPICard(
+                      "MONTH REVENUE",
+                      "Rs. ${monthRevenue.toInt()}",
+                      Icons.trending_up,
+                      Colors.purple,
+                      cardColor,
+                      isDark,
+                    ),
+                  ],
                 ),
               ),
+            ),
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 50,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: _filters.length,
+                  itemBuilder: (context, index) {
+                    final filter = _filters[index];
+                    final isSelected = _selectedFilter == filter;
+                    final count = counts[filter] ?? 0;
 
-              // Filter Tabs
-              SliverToBoxAdapter(
-                child: SizedBox(
-                  height: 50,
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: _filters.length,
-                    itemBuilder: (context, index) {
-                      final filter = _filters[index];
-                      final isSelected = _selectedFilter == filter;
-                      final count = counts[filter] ?? 0;
-
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 8.0),
-                        child: FilterChip(
-                          selected: isSelected,
-                          showCheckmark: false,
-                          label: Text(
-                            "$filter ($count)",
-                            style: TextStyle(
-                              color: isSelected
-                                  ? Colors.white
-                                  : (isDark
-                                        ? Colors.grey[300]
-                                        : Colors.black87),
-                              fontWeight: isSelected
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                            ),
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8.0),
+                      child: FilterChip(
+                        selected: isSelected,
+                        showCheckmark: false,
+                        label: Text(
+                          "$filter ($count)",
+                          style: TextStyle(
+                            color: isSelected
+                                ? Colors.white
+                                : (isDark ? Colors.grey[300] : Colors.black87),
+                            fontWeight: isSelected
+                                ? FontWeight.bold
+                                : FontWeight.normal,
                           ),
-                          backgroundColor: cardColor,
-                          selectedColor: isDark
-                              ? Colors.white24
-                              : Colors.black87,
-                          side: BorderSide(
-                            color: isDark
-                                ? Colors.grey[800]!
-                                : Colors.grey.shade300,
-                          ),
-                          onSelected: (bool selected) {
-                            setState(() => _selectedFilter = filter);
-                          },
                         ),
-                      );
-                    },
-                  ),
+                        backgroundColor: cardColor,
+                        selectedColor: isDark ? Colors.white24 : Colors.black87,
+                        side: BorderSide(
+                          color: isDark
+                              ? Colors.grey[800]!
+                              : Colors.grey.shade300,
+                        ),
+                        onSelected: (bool selected) {
+                          setState(() => _selectedFilter = filter);
+                        },
+                      ),
+                    );
+                  },
                 ),
               ),
-
-              // Orders List
-              SliverPadding(
-                padding: const EdgeInsets.all(16),
-                sliver: displayedOrders.isEmpty
-                    ? SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.only(top: 40.0),
-                          child: Center(
-                            child: Text(
-                              "No $_selectedFilter orders found.",
-                              style: TextStyle(color: Colors.grey[500]),
-                            ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.all(16),
+              sliver: displayedOrders.isEmpty
+                  ? SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 40.0),
+                        child: Center(
+                          child: Text(
+                            "No $_selectedFilter orders found.",
+                            style: TextStyle(color: Colors.grey[500]),
                           ),
                         ),
-                      )
-                    : SliverList(
-                        delegate: SliverChildBuilderDelegate((context, index) {
-                          final order = displayedOrders[index];
-                          return _buildOrderCard(order, cardColor, isDark);
-                        }, childCount: displayedOrders.length),
                       ),
-              ),
-            ],
-          );
-        },
+                    )
+                  : SliverList(
+                      delegate: SliverChildBuilderDelegate((context, index) {
+                        return _buildOrderCard(
+                          displayedOrders[index],
+                          cardColor,
+                          isDark,
+                        );
+                      }, childCount: displayedOrders.length),
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -375,11 +478,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
     bool isDark,
   ) {
     final status = (order['status']?.toString() ?? 'pending').toLowerCase();
-
-    // 👇 FIXED: Using our new helper function
     final formattedDate = _formatDate(order['created_at']?.toString());
-
-    // Check both potential column names
     final total =
         double.tryParse(
           order['total']?.toString() ??
@@ -387,13 +486,11 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
               '0',
         ) ??
         0;
-
     final email = order['email'] ?? 'Guest Customer';
     final phone = order['phone'] ?? 'No phone provided';
-    final orderId = order['id'].toString().substring(
-      0,
-      8,
-    ); // Just show short ID
+
+    String orderId = order['id'].toString();
+    String displayId = orderId.length > 8 ? orderId.substring(0, 8) : orderId;
 
     Color statusColor;
     switch (status) {
@@ -404,16 +501,15 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
         statusColor = Colors.blueAccent;
         break;
       case 'delivered':
-        statusColor = const Color(0xFF16a34a);
+        statusColor = const Color(0xFF92D050);
         break;
       case 'cancelled':
         statusColor = Colors.redAccent;
         break;
       default:
-        statusColor = Colors.amber; // pending
+        statusColor = Colors.amber;
     }
 
-    // Safely parse status for the Dropdown UI
     String dropdownValue = 'Pending';
     for (var f in _filters) {
       if (f.toLowerCase() == status) {
@@ -435,7 +531,6 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header: Status & Date
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -461,8 +556,6 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
             ],
           ),
           const Divider(height: 24),
-
-          // Customer Details & Total
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -486,7 +579,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                       style: TextStyle(color: Colors.grey[500], fontSize: 12),
                     ),
                     Text(
-                      "#$orderId",
+                      "#$displayId",
                       style: TextStyle(color: Colors.grey[400], fontSize: 11),
                     ),
                   ],
@@ -510,7 +603,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w900,
-                        color: Color(0xFF16a34a),
+                        color: Color(0xFF92D050),
                       ),
                     ),
                   ],
@@ -520,7 +613,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Status Dropdown
+          // 👇 Status Selection Dropdown
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
@@ -551,7 +644,8 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                 }).toList(),
                 onChanged: (newValue) {
                   if (newValue != null && newValue != dropdownValue) {
-                    _updateOrderStatus(order['id'].toString(), newValue);
+                    // Triggers the safe update function
+                    _updateOrderStatus(orderId, newValue);
                   }
                 },
               ),

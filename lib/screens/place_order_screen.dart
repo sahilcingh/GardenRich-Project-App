@@ -110,7 +110,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
               child: const Text(
                 "OK",
                 style: TextStyle(
-                  color: Color(0xFF16a34a),
+                  color: Color(0xFF92D050),
                   fontWeight: FontWeight.bold,
                   fontSize: 16,
                 ),
@@ -137,7 +137,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
       return;
     }
 
-    // 👇 NEW: 10-Digit Phone Number Validation
+    // 10-Digit Phone Number Validation
     if (cleanPhone.length != 10) {
       _showErrorPopup(
         "Invalid Phone Number",
@@ -185,7 +185,6 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
       final List<Map<String, dynamic>> orderItems = widget.items.map((item) {
         return {
           'order_id': newOrderId,
-          'product_id': item['variant_id'] ?? item['uuid'] ?? item['id'],
           'product_name': item['name'],
           'price': item['price'],
           'quantity': item['qty'],
@@ -195,14 +194,48 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
       try {
         await Supabase.instance.client.from('order_items').insert(orderItems);
       } catch (itemError) {
-        debugPrint("Skipped inserting into order_items: $itemError");
+        debugPrint("❌ ORDER ITEMS INSERT FAILED: $itemError");
+        debugPrint("❌ Items attempted: $orderItems");
+      }
+
+      // 3. Direct Stock Deduction (No SQL/RPC needed!)
+      for (var item in widget.items) {
+        final variantId = item['variant_id'];
+        final qtyOrdered = item['qty'] as int;
+
+        if (variantId != null) {
+          try {
+            // A. Fetch the current stock from the database
+            final variantData = await Supabase.instance.client
+                .from('product_variants')
+                .select('stock')
+                .eq('id', variantId)
+                .single();
+
+            // B. Calculate the new stock
+            int currentStock =
+                int.tryParse(variantData['stock']?.toString() ?? '0') ?? 0;
+            int newStock = currentStock - qtyOrdered;
+
+            // Prevent stock from going into negative numbers
+            if (newStock < 0) newStock = 0;
+
+            // C. Update the database directly
+            await Supabase.instance.client
+                .from('product_variants')
+                .update({'stock': newStock})
+                .eq('id', variantId);
+          } catch (e) {
+            debugPrint("Failed to update stock for variant $variantId: $e");
+          }
+        }
       }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("🎉 Order Placed Successfully!"),
-            backgroundColor: Color(0xFF16a34a),
+            backgroundColor: Color(0xFF92D050),
           ),
         );
 
@@ -270,7 +303,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                   ),
                 ),
               ),
-              ?trailing,
+              if (trailing != null) trailing,
             ],
           ),
           const SizedBox(height: 20),
@@ -307,6 +340,12 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
 
           ...widget.items.map((item) {
             final itemPrice = (item['price'] as num?)?.toInt() ?? 0;
+
+            // 👇 THE FIX: Robust Image Validation
+            final String imageUrl = item['image']?.toString() ?? "";
+            final bool hasValidImage =
+                imageUrl.isNotEmpty && imageUrl.startsWith('http');
+
             return Padding(
               padding: const EdgeInsets.only(bottom: 16.0),
               child: Row(
@@ -314,17 +353,34 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child: item['image'] != null
+                    child: hasValidImage
                         ? Image.network(
-                            item['image'],
+                            imageUrl,
                             width: 48,
                             height: 48,
                             fit: BoxFit.cover,
+                            // 👇 THE FIX: Error Builder catches crashes silently
+                            errorBuilder: (context, error, stackTrace) =>
+                                Container(
+                                  width: 48,
+                                  height: 48,
+                                  color: Colors.grey[200],
+                                  child: Icon(
+                                    Icons.image_not_supported,
+                                    color: Colors.grey[400],
+                                    size: 24,
+                                  ),
+                                ),
                           )
                         : Container(
                             width: 48,
                             height: 48,
                             color: Colors.grey[200],
+                            child: Icon(
+                              Icons.image,
+                              color: Colors.grey[400],
+                              size: 24,
+                            ),
                           ),
                   ),
                   const SizedBox(width: 12),
@@ -493,7 +549,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                 style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w900,
-                  color: Color(0xFF16a34a),
+                  color: Color(0xFF92D050),
                 ),
               ),
             ],
@@ -573,7 +629,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
                               borderSide: const BorderSide(
-                                color: Color(0xFF16a34a),
+                                color: Color(0xFF92D050),
                               ),
                             ),
                           ),
@@ -611,7 +667,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
                               borderSide: const BorderSide(
-                                color: Color(0xFF16a34a),
+                                color: Color(0xFF92D050),
                               ),
                             ),
                           ),
@@ -634,7 +690,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                       });
                     }),
                     style: TextButton.styleFrom(
-                      foregroundColor: const Color(0xFF16a34a),
+                      foregroundColor: const Color(0xFF92D050),
                       textStyle: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     child: const Text("+ Add New Address"),
@@ -686,12 +742,12 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                               padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(
                                 color: isSelected
-                                    ? const Color(0xFF16a34a).withOpacity(0.05)
+                                    ? const Color(0xFF92D050).withOpacity(0.05)
                                     : Colors.transparent,
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
                                   color: isSelected
-                                      ? const Color(0xFF16a34a)
+                                      ? const Color(0xFF92D050)
                                       : Colors.grey.shade300,
                                   width: isSelected ? 2 : 1,
                                 ),
@@ -704,7 +760,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                                         ? Icons.radio_button_checked
                                         : Icons.radio_button_unchecked,
                                     color: isSelected
-                                        ? const Color(0xFF16a34a)
+                                        ? const Color(0xFF92D050)
                                         : Colors.grey,
                                   ),
                                   const SizedBox(width: 12),
@@ -798,10 +854,10 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF16a34a).withOpacity(0.05),
+                          color: const Color(0xFF92D050).withOpacity(0.05),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: const Color(0xFF16a34a),
+                            color: const Color(0xFF92D050),
                             width: 2,
                           ),
                         ),
@@ -809,7 +865,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                           children: [
                             const Icon(
                               Icons.radio_button_checked,
-                              color: Color(0xFF16a34a),
+                              color: Color(0xFF92D050),
                             ),
                             const SizedBox(width: 12),
                             Column(

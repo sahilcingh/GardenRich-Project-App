@@ -1,7 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class HomeFooter extends StatelessWidget {
   const HomeFooter({super.key});
+
+  Future<void> _launchQyroxisUrl() async {
+    final Uri url = Uri.parse('https://www.qyroxis.com');
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      debugPrint('Could not launch $url');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,13 +35,28 @@ class HomeFooter extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          Row(
+
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text(
-                "Crafted with ",
+                "Crafted By ",
                 style: TextStyle(color: textColor, fontSize: 13),
               ),
-              const Icon(Icons.favorite, color: Colors.blue, size: 14),
+              GestureDetector(
+                onTap: _launchQyroxisUrl,
+                child: Text(
+                  "Qyroxis",
+                  style: TextStyle(
+                    color: isDark ? Colors.grey[300] : Colors.grey[800],
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+              Text(" with ", style: TextStyle(color: textColor, fontSize: 13)),
+              const Icon(Icons.favorite, color: Color(0xFF92D050), size: 14),
               Text(
                 " in Bengaluru, India",
                 style: TextStyle(color: textColor, fontSize: 13),

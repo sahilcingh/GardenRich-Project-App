@@ -32,12 +32,10 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
     _fetchSettings();
   }
 
-  // 👇 Fetches your Key-Value pairs and applies them to the UI
   Future<void> _fetchSettings() async {
     try {
       final response = await client.from('settings').select();
 
-      // Convert the list of rows into a simple Dictionary/Map
       final settingsMap = {
         for (var item in response) item['key']: item['value'],
       };
@@ -68,7 +66,6 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
     }
   }
 
-  // 👇 Upserts multiple Key-Value rows at once
   Future<void> _saveSettings() async {
     setState(() => _isSaving = true);
     try {
@@ -99,22 +96,22 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
         },
       ];
 
-      // Upsert updates existing keys or inserts them if they don't exist
       await client.from('settings').upsert(updates, onConflict: 'key');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("Settings saved successfully!"),
-            backgroundColor: Color(0xFF16a34a),
+            backgroundColor: Color(0xFF92D050),
           ),
         );
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
         );
+      }
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -129,7 +126,7 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(primary: Color(0xFF16a34a)),
+            colorScheme: const ColorScheme.light(primary: Color(0xFF92D050)),
           ),
           child: child!,
         );
@@ -150,7 +147,7 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
       return Scaffold(
         backgroundColor: bgColor,
         body: const Center(
-          child: CircularProgressIndicator(color: Color(0xFF16a34a)),
+          child: CircularProgressIndicator(color: Color(0xFF92D050)),
         ),
       );
     }
@@ -191,6 +188,7 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
               child: Column(
                 children: [
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
                         child: _buildSettingField(
@@ -206,7 +204,7 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
                           "FREE SHIPPING ABOVE (₹)",
                           _freeShippingAboveCtrl,
                           isDark,
-                          "Set 0 to disable free shipping threshold",
+                          "Set 0 to disable free shipping",
                         ),
                       ),
                     ],
@@ -233,7 +231,7 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
                 "MINIMUM ORDER VALUE (₹)",
                 _minOrderValueCtrl,
                 isDark,
-                "Set 0 to allow any order value. Customers can't checkout below this amount.",
+                "Set 0 to allow any order value.",
               ),
             ),
             const SizedBox(height: 16),
@@ -243,7 +241,7 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
               cardColor,
               isDark,
               icon: Icons.local_offer_outlined,
-              iconColor: const Color(0xFF16a34a),
+              iconColor: const Color(0xFF92D050),
               title: "Discount / Coupon",
               subtitle:
                   "Create a discount code customers can apply at checkout",
@@ -287,13 +285,14 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
                   if (_discountType != 'none') ...[
                     const SizedBox(height: 24),
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(
                           child: _buildSettingField(
                             "COUPON CODE",
                             _couponCodeCtrl,
                             isDark,
-                            "Customers enter this code",
+                            "Customers enter this",
                             isText: true,
                           ),
                         ),
@@ -310,6 +309,7 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
                     ),
                     const SizedBox(height: 16),
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(
                           child: _buildSettingField(
@@ -324,13 +324,23 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                "EXPIRY DATE (OPTIONAL)",
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.grey,
-                                  letterSpacing: 1.1,
+                              // 👇 FIX: Fixed-height wrapper to perfectly align with the Left text field
+                              SizedBox(
+                                height: 34,
+                                child: Align(
+                                  alignment: Alignment.bottomLeft,
+                                  child: const Text(
+                                    "EXPIRY DATE (OPTIONAL)",
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.grey,
+                                      letterSpacing: 1.1,
+                                      height: 1.2,
+                                    ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
                               ),
                               const SizedBox(height: 8),
@@ -338,7 +348,7 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
                                 onTap: _pickExpiryDate,
                                 child: Container(
                                   height:
-                                      52, // Matches the height of TextFields
+                                      52, // Matches the height of TextFields perfectly
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 12,
                                   ),
@@ -384,6 +394,8 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
                                   fontSize: 11,
                                   color: Colors.grey,
                                 ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ],
                           ),
@@ -408,7 +420,7 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
               child: ElevatedButton(
                 onPressed: _isSaving ? null : _saveSettings,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF16a34a),
+                  backgroundColor: const Color(0xFF92D050),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -507,16 +519,28 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
     String hintText, {
     bool isText = false,
   }) {
+    final bool hideRupee = isText || label.contains("(%)");
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.bold,
-            color: Colors.grey,
-            letterSpacing: 1.1,
+        // 👇 FIX: Fixed-height wrapper forces all labels to perfectly match
+        SizedBox(
+          height: 34,
+          child: Align(
+            alignment: Alignment.bottomLeft,
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey,
+                letterSpacing: 1.1,
+                height: 1.2, // Tighter line height for multiline text
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ),
         const SizedBox(height: 8),
@@ -525,10 +549,10 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
           child: TextField(
             controller: controller,
             keyboardType: isText ? TextInputType.text : TextInputType.number,
-            onChanged: (val) => setState(() {}), // Real-time preview updates
+            onChanged: (val) => setState(() {}),
             style: TextStyle(color: isDark ? Colors.white : Colors.black),
             decoration: InputDecoration(
-              prefixIcon: isText
+              prefixIcon: hideRupee
                   ? null
                   : const Icon(
                       Icons.currency_rupee,
@@ -553,7 +577,7 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: Color(0xFF16a34a)),
+                borderSide: const BorderSide(color: Color(0xFF92D050)),
               ),
             ),
           ),
@@ -563,6 +587,8 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
           Text(
             hintText,
             style: const TextStyle(fontSize: 11, color: Colors.grey),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
       ],
     );
@@ -582,12 +608,12 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
             color: isActive
-                ? const Color(0xFF16a34a)
+                ? const Color(0xFF92D050)
                 : (isDark ? Colors.grey[800] : Colors.grey[50]),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
               color: isActive
-                  ? const Color(0xFF16a34a)
+                  ? const Color(0xFF92D050)
                   : (isDark ? Colors.grey[700]! : Colors.grey.shade200),
             ),
           ),

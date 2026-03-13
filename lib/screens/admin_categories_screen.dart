@@ -33,7 +33,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("Category added successfully!"),
-            backgroundColor: Color(0xFF16a34a),
+            backgroundColor: Color(0xFF92D050),
           ),
         );
       }
@@ -137,7 +137,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                         child: ElevatedButton(
                           onPressed: _isLoading ? null : _addCategory,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF16a34a),
+                            backgroundColor: const Color(0xFF92D050),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),

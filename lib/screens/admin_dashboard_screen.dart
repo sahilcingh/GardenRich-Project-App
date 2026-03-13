@@ -104,7 +104,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ListTile(
                   leading: const Icon(
                     Icons.photo_library_outlined,
-                    color: Color(0xFF16a34a),
+                    color: Color(0xFF92D050),
                   ),
                   title: const Text(
                     'Choose from Gallery',
@@ -115,7 +115,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ListTile(
                   leading: const Icon(
                     Icons.camera_alt_outlined,
-                    color: Color(0xFF16a34a),
+                    color: Color(0xFF92D050),
                   ),
                   title: const Text(
                     'Take a Photo',
@@ -230,10 +230,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("Product listed successfully!"),
-            backgroundColor: Color(0xFF16a34a),
+            backgroundColor: Color(0xFF92D050),
           ),
         );
-        context.go('/home');
+        context.go('/admin-home');
       }
     } catch (e) {
       if (mounted) {
@@ -274,7 +274,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ),
               const TextSpan(
                 text: 'Rich',
-                style: TextStyle(color: Color(0xFF16a34a)),
+                style: TextStyle(color: Color(0xFF92D050)),
               ),
             ],
           ),
@@ -292,7 +292,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 borderRadius: BorderRadius.circular(16),
               ),
               onSelected: (value) async {
-                if (value == 'orders') {
+                if (value == 'dashboard') {
+                  // 👇 This safely teleports you away from the form and back to the Grid
+                  context.go('/admin-home');
+                } else if (value == 'orders') {
                   context.push('/admin-orders'); // Route to Manage Orders
                 } else if (value == 'logout') {
                   await Supabase.instance.client.auth.signOut();
@@ -593,7 +596,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               if (isDrawer) {
                 Navigator.pop(context);
               }
-              context.go('/home');
+              context.go('/admin-home');
             },
           ),
           const SizedBox(height: 20),
@@ -711,7 +714,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       Row(
                         children: [
                           _buildColumnHeader("QTY", 80),
-                          _buildColumnHeader("UNIT", 80),
+                          _buildColumnHeader("UNIT", 100),
                           _buildColumnHeader("PRICE ₹", 100),
                           _buildColumnHeader("MRP ₹", 100),
                           _buildColumnHeader("STOCK", 100),
@@ -732,7 +735,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               _buildGridTextField(
                                 variant['unit']!,
                                 "g",
-                                80,
+                                110,
                                 isDark,
                               ),
                               _buildGridTextField(
@@ -768,13 +771,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   onPressed: _addVariantRow,
                   icon: const Icon(
                     Icons.add,
-                    color: Color(0xFF16a34a),
+                    color: Color(0xFF92D050),
                     size: 18,
                   ),
                   label: const Text(
                     "Add Another Size",
                     style: TextStyle(
-                      color: Color(0xFF16a34a),
+                      color: Color(0xFF92D050),
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -823,7 +826,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               : "No file chosen",
                           style: TextStyle(
                             color: _imageFile != null
-                                ? const Color(0xFF16a34a)
+                                ? const Color(0xFF92D050)
                                 : Colors.grey[600],
                             fontSize: 14,
                             fontWeight: _imageFile != null
@@ -850,7 +853,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     value: _isFeatured,
                     onChanged: (val) =>
                         setState(() => _isFeatured = val ?? false),
-                    activeColor: const Color(0xFF16a34a),
+                    activeColor: const Color(0xFF92D050),
                     title: Text(
                       "Mark as Featured / Best Seller",
                       style: TextStyle(
@@ -888,7 +891,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     ),
                     child: _isLoading
                         ? const CircularProgressIndicator(
-                            color: Color(0xFF16a34a),
+                            color: Color(0xFF92D050),
                           )
                         : const Text(
                             "List Product",
@@ -955,7 +958,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFF16a34a), width: 2),
+          borderSide: const BorderSide(color: Color(0xFF92D050), width: 2),
         ),
       ),
     );
@@ -979,6 +982,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
+  // Replace your existing _buildGridTextField with this:
   Widget _buildGridTextField(
     TextEditingController controller,
     String hint,
@@ -986,6 +990,60 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     bool isDark, {
     bool isNumber = false,
   }) {
+    // 👇 If the hint is "g" (meaning it's the Unit column), show a Dropdown!
+    if (hint == "g") {
+      final units = ['g', 'kg', 'ml', 'L', 'pc', 'bunch', 'dozen'];
+      // Ensure the controller's current text is valid, otherwise default to 'g'
+      if (!units.contains(controller.text)) controller.text = 'g';
+
+      return Container(
+        width: width,
+        padding: const EdgeInsets.only(right: 8.0),
+        child: DropdownButtonFormField<String>(
+          value: controller.text,
+          isExpanded: true,
+          dropdownColor: isDark ? Colors.grey[800] : Colors.white,
+          icon: const Icon(Icons.keyboard_arrow_down, size: 16),
+          style: TextStyle(
+            color: isDark ? Colors.white : Colors.black87,
+            fontSize: 14,
+          ),
+          decoration: InputDecoration(
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 4,
+              vertical: 12,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(
+                color: isDark ? Colors.grey[700]! : Colors.grey.shade300,
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(
+                color: isDark ? Colors.grey[700]! : Colors.grey.shade300,
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: Color(0xFF92D050)),
+            ),
+          ),
+          items: units.map((String u) {
+            return DropdownMenuItem(
+              value: u,
+              child: Text(u, overflow: TextOverflow.ellipsis, maxLines: 1),
+            );
+          }).toList(),
+          onChanged: (val) {
+            if (val != null) setState(() => controller.text = val);
+          },
+        ),
+      );
+    }
+
+    // Otherwise, render the normal text field
     return Container(
       width: width,
       padding: const EdgeInsets.only(right: 8.0),
@@ -1017,7 +1075,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFF16a34a)),
+            borderSide: const BorderSide(color: Color(0xFF92D050)),
           ),
         ),
       ),

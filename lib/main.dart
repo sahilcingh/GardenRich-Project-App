@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:garden_rich/screens/admin_dashboard_screen.dart';
+import 'package:garden_rich/screens/edit_profile_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
 
@@ -14,9 +15,9 @@ import 'screens/checkout_screen.dart';
 import 'screens/place_order_screen.dart';
 import 'screens/order_details_screen.dart';
 import 'screens/order_screen.dart';
-import 'screens/admin_products_screen.dart';
 import 'screens/admin_home_screen.dart';
-// 👇 NEW: Import the Admin Categories Screen
+import 'screens/help_screen.dart';
+import 'screens/about_us_screen.dart';
 import 'screens/admin_categories_screen.dart';
 import 'screens/admin_store_settings_screen.dart';
 import 'screens/admin_orders_screen.dart';
@@ -47,7 +48,6 @@ final _router = GoRouter(
       path: '/admin-dashboard',
       builder: (context, state) => const AdminDashboardScreen(),
     ),
-    // 👇 NEW: Register the Admin Categories route
     GoRoute(
       path: '/admin-categories',
       builder: (context, state) => const AdminCategoriesScreen(),
@@ -56,10 +56,11 @@ final _router = GoRouter(
       path: '/admin-orders',
       builder: (context, state) => const AdminOrdersScreen(),
     ),
-
+    GoRoute(path: '/help', builder: (context, state) => const HelpScreen()),
+    GoRoute(path: '/about', builder: (context, state) => const AboutUsScreen()),
     GoRoute(
-      path: '/admin-products',
-      builder: (context, state) => const AdminProductsScreen(),
+      path: '/edit-profile',
+      builder: (context, state) => const EditProfileScreen(),
     ),
     GoRoute(
       path: '/order-details',
@@ -126,7 +127,7 @@ class MyApp extends ConsumerWidget {
       // LIGHT THEME
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.green,
+          seedColor: Color(0xFF92D050),
           brightness: Brightness.light,
         ),
         useMaterial3: true,
@@ -142,7 +143,7 @@ class MyApp extends ConsumerWidget {
       // DARK THEME
       darkTheme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.green,
+          seedColor: Color(0xFF92D050),
           brightness: Brightness.dark,
         ),
         useMaterial3: true,

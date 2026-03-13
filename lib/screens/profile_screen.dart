@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
@@ -37,9 +38,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           _userMobile = data['mobile'];
         });
       }
-    } catch (e) {
-      // Handle error
-    }
+    } catch (e) {}
   }
 
   @override
@@ -78,6 +77,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             const SizedBox(height: 16),
             Text(
               user != null ? (_userName ?? "GardenRich User") : "Your account",
+              textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.w900,
@@ -85,20 +85,34 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ),
             ),
             const SizedBox(height: 8),
+
             if (user != null)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+              Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8.0,
+                runSpacing: 4.0,
                 children: [
                   if (_userMobile != null && _userMobile!.isNotEmpty) ...[
-                    Icon(Icons.phone_iphone, size: 14, color: Colors.grey[600]),
-                    const SizedBox(width: 4),
-                    Text(
-                      _userMobile!,
-                      style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.phone_iphone,
+                          size: 14,
+                          color: Colors.grey[600],
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _userMobile!,
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 10),
                     Text("•", style: TextStyle(color: Colors.grey[600])),
-                    const SizedBox(width: 10),
                   ],
                   Text(
                     user.email ?? "",
@@ -106,12 +120,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ),
                 ],
               ),
+
             if (user == null)
               const Text(
                 "Log in to view your complete profile",
+                textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey, fontSize: 14),
               ),
             const SizedBox(height: 30),
+
             if (user == null)
               Row(
                 children: [
@@ -130,6 +147,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       ),
                       child: const Text(
                         "Log in",
+                        textAlign: TextAlign.center,
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ),
@@ -150,6 +168,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       ),
                       child: const Text(
                         "Sign up",
+                        textAlign: TextAlign.center,
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ),
@@ -157,28 +176,61 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 ],
               ),
             if (user != null)
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  // 👇 FIXED: Force the app to clear the routing stack and go to login
-                  onPressed: () async {
-                    await Supabase.instance.client.auth.signOut();
-                    if (context.mounted) {
-                      context.go('/login');
-                    }
-                  },
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: const BorderSide(color: Colors.red),
-                    padding: const EdgeInsets.symmetric(vertical: 15),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () {
+                        context
+                            .push('/edit-profile')
+                            .then((_) => _fetchUserProfile());
+                      },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: textColor,
+                        side: BorderSide(
+                          color: isDark ? Colors.white : Colors.black87,
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 15),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: const Text(
+                        "Edit profile",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
                     ),
                   ),
-                  child: const Text("Log Out"),
-                ),
+                  const SizedBox(width: 15),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        await Supabase.instance.client.auth.signOut();
+                        if (context.mounted) {
+                          context.go('/login');
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFD32F2F),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 15),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: const Text(
+                        "Log Out",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             const SizedBox(height: 30),
+
             Row(
               children: [
                 Expanded(
@@ -197,22 +249,27 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     borderRadius: BorderRadius.circular(12),
                     child: _buildQuickActionCard(
                       Icons.shopping_bag_outlined,
-                      "Your orders",
+                      "My orders",
                       isDark,
                     ),
                   ),
                 ),
                 const SizedBox(width: 15),
                 Expanded(
-                  child: _buildQuickActionCard(
-                    Icons.support_agent,
-                    "Need help?",
-                    isDark,
+                  child: InkWell(
+                    onTap: () => context.push('/help'),
+                    borderRadius: BorderRadius.circular(12),
+                    child: _buildQuickActionCard(
+                      Icons.support_agent,
+                      "Need help?",
+                      isDark,
+                    ),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 20),
+
             InkWell(
               onTap: () => _showAppearanceModal(currentThemeMode),
               child: Container(
@@ -231,18 +288,26 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   children: [
                     const Icon(Icons.dark_mode_outlined, color: Colors.grey),
                     const SizedBox(width: 15),
-                    Text(
-                      "Appearance",
-                      style: TextStyle(
-                        fontWeight: FontWeight.w500,
-                        fontSize: 16,
-                        color: textColor,
+                    Expanded(
+                      child: Text(
+                        "Appearance",
+                        style: TextStyle(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 16,
+                          color: textColor,
+                        ),
                       ),
                     ),
-                    const Spacer(),
-                    Text(
-                      themeText,
-                      style: const TextStyle(color: Colors.grey, fontSize: 12),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        themeText,
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(
+                          color: Colors.grey,
+                          fontSize: 12,
+                        ),
+                      ),
                     ),
                     const SizedBox(width: 8),
                     const Icon(Icons.keyboard_arrow_down, color: Colors.grey),
@@ -251,6 +316,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ),
             ),
             const SizedBox(height: 30),
+
             _buildSectionHeader("Your information", textColor),
             _buildMenuOption(
               Icons.book_outlined,
@@ -268,15 +334,28 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               },
             ),
             const SizedBox(height: 20),
+
             _buildSectionHeader("Other information", textColor),
             _buildMenuOption(
               Icons.share_outlined,
               "Share the app",
               isDark,
               textColor,
+              onTap: () {
+                Share.share(
+                  'Check out GardenRich for the best fresh products! Download the app today: https://gardenrich.online',
+                );
+              },
             ),
-            _buildMenuOption(Icons.info_outline, "About us", isDark, textColor),
+            _buildMenuOption(
+              Icons.info_outline,
+              "About us",
+              isDark,
+              textColor,
+              onTap: () => context.push('/about'),
+            ),
             const SizedBox(height: 30),
+
             const Text(
               "GardenRich v1.0.0",
               style: TextStyle(color: Colors.grey, fontSize: 12),
@@ -367,7 +446,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   Widget _buildQuickActionCard(IconData icon, String label, bool isDark) {
     return Container(
-      height: 90,
+      padding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 8.0),
       decoration: BoxDecoration(
         color: isDark ? Colors.grey[900] : Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -376,12 +455,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(icon, size: 28, color: isDark ? Colors.white : Colors.black87),
           const SizedBox(height: 8),
           Text(
             label,
+            textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w500,
