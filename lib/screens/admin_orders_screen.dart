@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:go_router/go_router.dart';
 
 class AdminOrdersScreen extends StatefulWidget {
   const AdminOrdersScreen({super.key});
@@ -33,14 +34,14 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
 
   Future<void> _fetchOrders() async {
     try {
+      // 👇 THE CLEAN JOIN: Fetches the order AND its linked address instantly!
       final response = await client
           .from('orders')
-          .select()
+          .select('*, addresses(*)')
           .order('created_at', ascending: false);
+
       if (mounted) {
         setState(() {
-          // 👇 CRITICAL FIX: .map((e) => Map.from(e)) makes the data modifiable
-          // so it doesn't crash when we try to update the status locally!
           _orders = response.map((e) => Map<String, dynamic>.from(e)).toList();
           _isLoading = false;
         });
@@ -54,12 +55,11 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
   String _formatDate(String? dateString) {
     if (dateString == null || dateString.isEmpty) return 'Unknown Date';
     try {
-      // 👇 THE FIX: Force Dart to treat the raw database time as UTC
       String safeDate = dateString;
       if (!safeDate.endsWith('Z')) safeDate += 'Z';
 
       final dateTime = DateTime.parse(safeDate).toLocal();
-      return DateFormat('dd MMM yyyy, hh:mm a').format(dateTime);
+      return DateFormat('dd MMM yyyy, h:mm a').format(dateTime);
     } catch (e) {
       return dateString;
     }
@@ -67,8 +67,6 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
 
   Future<void> _updateOrderStatus(String orderId, String newStatus) async {
     try {
-      // 1. Update the database and FORCE a return value (.select())
-      // to verify it wasn't blocked by Supabase RLS permissions.
       final res = await client
           .from('orders')
           .update({'status': newStatus.toLowerCase()})
@@ -77,11 +75,10 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
 
       if (res.isEmpty) {
         throw Exception(
-          "Update blocked. Please check your Supabase RLS 'UPDATE' policies for the orders table.",
+          "Update blocked. Please check your Supabase RLS 'UPDATE' policies.",
         );
       }
 
-      // 2. Safely update the local UI
       if (mounted) {
         setState(() {
           final index = _orders.indexWhere(
@@ -92,7 +89,6 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
           }
         });
 
-        // 👇 SUCCESS POPUP INSTEAD OF SNACKBAR
         showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
@@ -130,7 +126,6 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
       }
     } catch (e) {
       if (mounted) {
-        // 👇 ERROR POPUP INSTEAD OF SNACKBAR
         showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
@@ -148,7 +143,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
               ],
             ),
             content: Text(
-              e.toString().replaceAll("Exception: ", ""), // Cleans up the text
+              e.toString().replaceAll("Exception: ", ""),
               style: const TextStyle(fontSize: 14),
             ),
             actions: [
@@ -175,6 +170,17 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
     }
   }
 
+  void _showOrderDetailsPopup(Map<String, dynamic> order) {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => _AdminOrderDetailsDialog(
+        order: order,
+        formattedDate: _formatDate(order['created_at']?.toString()),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -191,8 +197,6 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
       );
     }
 
-    // --- KPI Calculations (Timezone Adjusted Automatically) ---
-    // 👇 Just use standard DateTime.now(), it automatically uses your phone's IST!
     final now = DateTime.now();
 
     int todayOrders = 0;
@@ -215,13 +219,10 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
 
       if (dateString != null && dateString.isNotEmpty) {
         try {
-          // 👇 Apply the exact same "Z" trick here for perfect KPI matching!
           String safeDate = dateString;
           if (!safeDate.endsWith('Z')) safeDate += 'Z';
           date = DateTime.parse(safeDate).toLocal();
-        } catch (e) {
-          // ignore
-        }
+        } catch (e) {}
       }
 
       final total =
@@ -294,9 +295,10 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
       ),
       body: RefreshIndicator(
         onRefresh: _fetchOrders,
+        color: const Color(0xFF92D050),
+        backgroundColor: cardColor,
         child: CustomScrollView(
-          physics:
-              const AlwaysScrollableScrollPhysics(), // Ensures pull-to-refresh always works
+          physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
             SliverToBoxAdapter(
               child: Padding(
@@ -406,6 +408,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                   : SliverList(
                       delegate: SliverChildBuilderDelegate((context, index) {
                         return _buildOrderCard(
+                          context,
                           displayedOrders[index],
                           cardColor,
                           isDark,
@@ -473,6 +476,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
   }
 
   Widget _buildOrderCard(
+    BuildContext context,
     Map<String, dynamic> order,
     Color cardColor,
     bool isDark,
@@ -486,8 +490,23 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
               '0',
         ) ??
         0;
+
     final email = order['email'] ?? 'Guest Customer';
-    final phone = order['phone'] ?? 'No phone provided';
+
+    // 👇 Extracts data elegantly from the joined addresses object
+    final addrData = order['addresses'];
+    String phone = order['phone']?.toString() ?? 'No phone provided';
+    String customerName = order['name'] ?? order['customer_name'] ?? email;
+
+    if (addrData != null && addrData is Map) {
+      final fName = addrData['first_name'] ?? '';
+      final lName = addrData['last_name'] == 'EMPTY'
+          ? ''
+          : (addrData['last_name'] ?? '');
+      final fullName = '$fName $lName'.trim();
+      if (fullName.isNotEmpty) customerName = fullName;
+      if (addrData['phone'] != null) phone = addrData['phone'].toString();
+    }
 
     String orderId = order['id'].toString();
     String displayId = orderId.length > 8 ? orderId.substring(0, 8) : orderId;
@@ -518,140 +537,672 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
       }
     }
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Material(
         color: cardColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isDark ? Colors.grey[800]! : Colors.grey.shade200,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: statusColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  dropdownValue,
-                  style: TextStyle(
-                    color: statusColor,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => _showOrderDetailsPopup(order),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isDark ? Colors.grey[800]! : Colors.grey.shade200,
               ),
-              Text(
-                formattedDate,
-                style: const TextStyle(fontSize: 11, color: Colors.grey),
-              ),
-            ],
-          ),
-          const Divider(height: 24),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                flex: 3,
-                child: Column(
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: statusColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        dropdownValue,
+                        style: TextStyle(
+                          color: statusColor,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      "$formattedDate · #$displayId",
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+                const Divider(height: 24),
+                Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      email,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
+                    Expanded(
+                      flex: 3,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            customerName,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 16,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            phone,
+                            style: TextStyle(
+                              color: Colors.grey[500],
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      phone,
-                      style: TextStyle(color: Colors.grey[500], fontSize: 12),
-                    ),
-                    Text(
-                      "#$displayId",
-                      style: TextStyle(color: Colors.grey[400], fontSize: 11),
+                    Expanded(
+                      flex: 2,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          const Text(
+                            "TOTAL",
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey,
+                            ),
+                          ),
+                          Text(
+                            "Rs. ${total.toInt()}",
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFF92D050),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
-              ),
-              Expanded(
-                flex: 2,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    const Text(
-                      "TOTAL",
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.grey[850] : Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: isDark ? Colors.grey[700]! : Colors.grey.shade300,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.receipt_long_outlined,
+                        size: 16,
+                        color: Colors.grey[600],
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        "Click to view details",
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const Spacer(),
+                      Icon(
+                        Icons.arrow_forward_ios,
+                        size: 14,
+                        color: Colors.grey[400],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.grey[850] : Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: isDark ? Colors.grey[700]! : Colors.grey.shade300,
+                    ),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: dropdownValue,
+                      isExpanded: true,
+                      dropdownColor: cardColor,
+                      icon: const Icon(
+                        Icons.arrow_drop_down,
                         color: Colors.grey,
                       ),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                      items: _filters.where((f) => f != 'All Orders').map((
+                        String value,
+                      ) {
+                        return DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(value),
+                        );
+                      }).toList(),
+                      onChanged: (newValue) {
+                        if (newValue != null && newValue != dropdownValue) {
+                          _updateOrderStatus(orderId, newValue);
+                        }
+                      },
                     ),
-                    Text(
-                      "Rs. ${total.toInt()}",
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                        color: Color(0xFF92D050),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// 👇 THE POPUP DIALOG (READS JOINED ADDRESS INSTANTLY)
+// ============================================================================
+class _AdminOrderDetailsDialog extends StatefulWidget {
+  final Map<String, dynamic> order;
+  final String formattedDate;
+
+  const _AdminOrderDetailsDialog({
+    required this.order,
+    required this.formattedDate,
+  });
+
+  @override
+  State<_AdminOrderDetailsDialog> createState() =>
+      _AdminOrderDetailsDialogState();
+}
+
+class _AdminOrderDetailsDialogState extends State<_AdminOrderDetailsDialog> {
+  List<Map<String, dynamic>> _orderItems = [];
+  bool _isLoading = true;
+
+  String _customerAddress = "No Address Provided";
+  String _customerName = "Guest Customer";
+  String _customerPhone = "No Phone";
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchOrderItemsAndParseAddress();
+  }
+
+  Future<void> _fetchOrderItemsAndParseAddress() async {
+    try {
+      final orderId = widget.order['id'].toString();
+
+      // 1. Fetch only the items (since the address is already joined!)
+      final itemsRes = await Supabase.instance.client
+          .from('order_items')
+          .select()
+          .eq('order_id', orderId);
+
+      List<Map<String, dynamic>> items = List<Map<String, dynamic>>.from(
+        itemsRes,
+      );
+
+      final productNames = items
+          .map((i) => (i['product_name'] ?? i['name'])?.toString())
+          .where((n) => n != null)
+          .toSet()
+          .toList();
+
+      // 2. Fetch Images
+      if (productNames.isNotEmpty) {
+        final productsRes = await Supabase.instance.client
+            .from('products')
+            .select('name, image')
+            .inFilter('name', productNames);
+
+        Map<String, dynamic> imageMap = {};
+        for (var p in productsRes) {
+          if (p['name'] != null && p['image'] != null) {
+            imageMap[p['name'].toString()] = p['image'];
+          }
+        }
+        for (var item in items) {
+          final pName = (item['product_name'] ?? item['name'])?.toString();
+          if (pName != null && imageMap.containsKey(pName)) {
+            item['image'] = imageMap[pName];
+          }
+        }
+      }
+
+      // 👇 3. READ THE ADDRESS DIRECTLY FROM THE JOINED DATA!
+      String fetchedAddress = "No Address Provided";
+      String fetchedName =
+          widget.order['email']?.toString() ?? "Guest Customer";
+      String fetchedPhone = widget.order['phone']?.toString() ?? "No Phone";
+
+      // Supabase magically nests the joined table data inside the 'addresses' key
+      final addrData = widget.order['addresses'];
+
+      if (addrData != null && addrData is Map) {
+        final street = addrData['address'] ?? '';
+        final city = addrData['city'] ?? '';
+        final pin = addrData['pin_code'] ?? '';
+
+        final fName = addrData['first_name'] ?? '';
+        final lName = addrData['last_name'] == 'EMPTY'
+            ? ''
+            : (addrData['last_name'] ?? '');
+        final fullName = '$fName $lName'.trim();
+
+        fetchedAddress = '$street, $city, $pin'
+            .replaceAll(RegExp(r'^, |, $'), '')
+            .trim();
+        if (fullName.isNotEmpty) fetchedName = fullName;
+        if (addrData['phone'] != null &&
+            addrData['phone'].toString().isNotEmpty) {
+          fetchedPhone = addrData['phone'].toString();
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _orderItems = items;
+          _customerAddress = fetchedAddress;
+          _customerName = fetchedName;
+          _customerPhone = fetchedPhone;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error: $e");
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bgColor = isDark ? Colors.grey[900]! : Colors.white;
+    final textColor = isDark ? Colors.white : Colors.black87;
+    final borderColor = isDark ? Colors.grey[800]! : Colors.grey.shade200;
+
+    final order = widget.order;
+    String orderId = order['id'].toString();
+    String displayId = orderId.length > 8 ? orderId.substring(0, 8) : orderId;
+
+    final total =
+        double.tryParse(order['total']?.toString() ?? '0')?.toInt() ?? 0;
+
+    int totalQty = 0;
+    for (var item in _orderItems) {
+      totalQty += (item['qty'] as int?) ?? 1;
+    }
+
+    return Dialog(
+      backgroundColor: bgColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: Container(
+        width: double.infinity,
+        constraints: const BoxConstraints(maxWidth: 500, maxHeight: 700),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // HEADER
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          "ORDER DETAILS",
+                          style: TextStyle(
+                            color: Color(0xFF92D050),
+                            fontWeight: FontWeight.w900,
+                            fontSize: 10,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _customerName,
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            color: textColor,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          "#$displayId · ${widget.formattedDate}",
+                          style: TextStyle(
+                            color: Colors.grey[500],
+                            fontSize: 12,
+                          ),
+                        ),
+
+                        const SizedBox(height: 12),
+
+                        // THE CLEAN ADDRESS BOX IN THE POPUP
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isDark ? Colors.grey[850] : Colors.grey[100],
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: borderColor),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(
+                                    Icons.location_on_outlined,
+                                    size: 14,
+                                    color: Colors.grey[500],
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _customerAddress,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: isDark
+                                            ? Colors.grey[400]
+                                            : Colors.grey[700],
+                                        height: 1.3,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.phone_outlined,
+                                    size: 14,
+                                    color: Colors.grey[500],
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    _customerPhone,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: isDark
+                                          ? Colors.grey[400]
+                                          : Colors.grey[700],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  InkWell(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.grey[800] : Colors.grey[100],
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.close,
+                        size: 20,
+                        color: Colors.grey[600],
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
-          ),
-          const SizedBox(height: 16),
+            ),
+            Divider(height: 1, color: borderColor),
 
-          // 👇 Status Selection Dropdown
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              color: isDark ? Colors.grey[850] : Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: isDark ? Colors.grey[700]! : Colors.grey.shade300,
-              ),
+            // ITEMS LIST
+            Expanded(
+              child: _isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF92D050),
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(20),
+                      itemCount: _orderItems.length,
+                      itemBuilder: (context, index) {
+                        final item = _orderItems[index];
+                        final qty = item['qty'] ?? 1;
+                        final price =
+                            double.tryParse(
+                              item['price']?.toString() ?? '0',
+                            )?.toInt() ??
+                            0;
+                        final imageUrl = item['image']?.toString() ?? '';
+                        final hasImage =
+                            imageUrl.isNotEmpty && imageUrl.startsWith('http');
+
+                        final weightStr =
+                            item['variant_weight']?.toString() ?? '';
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: bgColor,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: borderColor),
+                            boxShadow: [
+                              if (!isDark)
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.03),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Container(
+                                  width: 60,
+                                  height: 60,
+                                  color: isDark
+                                      ? Colors.grey[800]
+                                      : Colors.grey[100],
+                                  child: hasImage
+                                      ? Image.network(
+                                          imageUrl,
+                                          fit: BoxFit.cover,
+                                        )
+                                      : Icon(
+                                          Icons.image,
+                                          color: Colors.grey[400],
+                                        ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      item['product_name'] ??
+                                          item['name'] ??
+                                          'Unknown Item',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        color: textColor,
+                                        fontSize: 14,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Wrap(
+                                      spacing: 6,
+                                      crossAxisAlignment:
+                                          WrapCrossAlignment.center,
+                                      children: [
+                                        if (weightStr.isNotEmpty)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 6,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: isDark
+                                                  ? Colors.grey[800]
+                                                  : Colors.grey[100],
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                            ),
+                                            child: Text(
+                                              weightStr,
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                                color: isDark
+                                                    ? Colors.grey[300]
+                                                    : Colors.grey[700],
+                                              ),
+                                            ),
+                                          ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.blue.withOpacity(0.1),
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            "×$qty",
+                                            style: const TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.blue,
+                                            ),
+                                          ),
+                                        ),
+                                        Text(
+                                          "@ Rs. $price",
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.grey[500],
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                "Rs. ${price * qty}",
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: textColor,
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
             ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: dropdownValue,
-                isExpanded: true,
-                dropdownColor: cardColor,
-                icon: const Icon(Icons.arrow_drop_down, color: Colors.grey),
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : Colors.black87,
+
+            // FOOTER (ORDER TOTAL)
+            Container(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.grey[850] : Colors.grey[50],
+                borderRadius: const BorderRadius.vertical(
+                  bottom: Radius.circular(16),
                 ),
-                items: _filters.where((f) => f != 'All Orders').map((
-                  String value,
-                ) {
-                  return DropdownMenuItem<String>(
-                    value: value,
-                    child: Text(value),
-                  );
-                }).toList(),
-                onChanged: (newValue) {
-                  if (newValue != null && newValue != dropdownValue) {
-                    // Triggers the safe update function
-                    _updateOrderStatus(orderId, newValue);
-                  }
-                },
+                border: Border(top: BorderSide(color: borderColor)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "ORDER TOTAL",
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: Colors.grey[500],
+                          fontSize: 12,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        "${_orderItems.length} item${_orderItems.length == 1 ? '' : 's'} · Total qty: $totalQty",
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    "Rs. $total",
+                    style: const TextStyle(
+                      color: Color(0xFF00a651),
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

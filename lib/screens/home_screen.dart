@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
@@ -19,11 +20,34 @@ class _HomeScreenState extends State<HomeScreen> {
   List<String> _categories = ["All Products"];
   late Future<List<Map<String, dynamic>>> _productsFuture;
 
+  Timer? _refreshTimer;
+
   @override
   void initState() {
     super.initState();
     _productsFuture = _fetchProducts();
     _fetchCategories();
+
+    // Auto-refresh every 30 seconds
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _silentRefresh();
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  // 👇 FIXED: Simplified silent refresh
+  void _silentRefresh() {
+    _fetchCategories();
+    setState(() {
+      // We just trigger a new fetch. The FutureBuilder will keep showing
+      // the old data until this new fetch completes!
+      _productsFuture = _fetchProducts();
+    });
   }
 
   Future<void> _fetchCategories() async {
@@ -94,7 +118,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Text(
                   '${_cartItems.length}',
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: Colors.black,
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
                   ),
@@ -129,6 +153,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
     final screenWidth = MediaQuery.of(context).size.width;
     final double textScale = MediaQuery.textScalerOf(context).scale(1.0);
 
@@ -150,6 +175,92 @@ class _HomeScreenState extends State<HomeScreen> {
       backgroundColor: isDark
           ? const Color(0xFF121212)
           : const Color(0xFFf4f4f5),
+
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButton: _cartItems.isNotEmpty
+          ? Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: InkWell(
+                onTap: _navigateToCart,
+                child: Container(
+                  width: double.infinity,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF92D050),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child:
+                              _cartItems.first['image'] != null &&
+                                  _cartItems.first['image']
+                                      .toString()
+                                      .isNotEmpty
+                              ? Image.network(
+                                  _cartItems.first['image'],
+                                  width: 40,
+                                  height: 40,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (c, e, s) =>
+                                      _buildPlaceholderIcon(),
+                                )
+                              : _buildPlaceholderIcon(),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              "View cart",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              "${_cartItems.length} item${_cartItems.length > 1 ? 's' : ''}",
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.8),
+                                fontSize: 12,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16.0),
+                        child: Icon(
+                          Icons.arrow_forward_ios_rounded,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          : null,
 
       appBar: AppBar(
         surfaceTintColor: Colors.transparent,
@@ -190,7 +301,6 @@ class _HomeScreenState extends State<HomeScreen> {
             splashRadius: 24,
           ),
           const SizedBox(width: 4),
-
           Padding(
             padding: const EdgeInsets.only(right: 16.0),
             child: InkWell(
@@ -323,13 +433,17 @@ class _HomeScreenState extends State<HomeScreen> {
                   if (snapshot.hasError) {
                     return const Center(child: Text("Error fetching data"));
                   }
-                  if (snapshot.connectionState == ConnectionState.waiting) {
+
+                  // 👇 FIXED: Only show spinner if waiting AND there is NO old data to show
+                  if (snapshot.connectionState == ConnectionState.waiting &&
+                      !snapshot.hasData) {
                     return const Center(
                       child: CircularProgressIndicator(
                         color: Color(0xFF92D050),
                       ),
                     );
                   }
+
                   if (!snapshot.hasData || snapshot.data!.isEmpty) {
                     return const Center(child: Text("No products available"));
                   }
@@ -439,6 +553,15 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildPlaceholderIcon() {
+    return Container(
+      width: 40,
+      height: 40,
+      color: Colors.white.withOpacity(0.2),
+      child: const Icon(Icons.shopping_bag, color: Colors.white),
     );
   }
 }

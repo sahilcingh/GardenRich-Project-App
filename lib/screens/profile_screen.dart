@@ -270,6 +270,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
             const SizedBox(height: 20),
 
+            // 👇 THE FIXED APPEARANCE ROW
             InkWell(
               onTap: () => _showAppearanceModal(currentThemeMode),
               child: Container(
@@ -288,26 +289,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   children: [
                     const Icon(Icons.dark_mode_outlined, color: Colors.grey),
                     const SizedBox(width: 15),
-                    Expanded(
-                      child: Text(
-                        "Appearance",
-                        style: TextStyle(
-                          fontWeight: FontWeight.w500,
-                          fontSize: 16,
-                          color: textColor,
-                        ),
+                    Text(
+                      "Appearance",
+                      style: TextStyle(
+                        fontWeight: FontWeight.w500,
+                        fontSize: 16,
+                        color: textColor,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        themeText,
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(
-                          color: Colors.grey,
-                          fontSize: 12,
-                        ),
-                      ),
+                    const Spacer(), // 👈 The magic spring that pushes everything to the right
+                    Text(
+                      themeText,
+                      style: const TextStyle(color: Colors.grey, fontSize: 12),
                     ),
                     const SizedBox(width: 8),
                     const Icon(Icons.keyboard_arrow_down, color: Colors.grey),

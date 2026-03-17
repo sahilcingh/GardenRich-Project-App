@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:garden_rich/screens/admin_dashboard_screen.dart';
+import 'package:garden_rich/screens/admin_order_details_screen.dart';
 import 'package:garden_rich/screens/edit_profile_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
@@ -51,6 +52,13 @@ final _router = GoRouter(
     GoRoute(
       path: '/admin-categories',
       builder: (context, state) => const AdminCategoriesScreen(),
+    ),
+    GoRoute(
+      path: '/admin-order-details',
+      builder: (context, state) {
+        final order = state.extra as Map<String, dynamic>;
+        return AdminOrderDetailsScreen(order: order);
+      },
     ),
     GoRoute(
       path: '/admin-orders',

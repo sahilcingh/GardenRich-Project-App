@@ -6,7 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_ringtone_player/flutter_ringtone_player.dart'; // 🎵 NEW SOUND PACKAGE
+import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
 
 import '../widgets/home_footer.dart';
 
@@ -33,7 +33,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
 
   SharedPreferences? _prefs;
 
-  // 👇 THE FIX: We use a String instead of a DateTime object to avoid TimeZone glitches
   String _lastSeenTimeStr = DateTime.fromMillisecondsSinceEpoch(
     0,
     isUtc: true,
@@ -45,7 +44,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     _fetchData(showSpinner: true);
     _initPrefsAndOrders();
 
-    // Refresh every 30 seconds silently
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
       _fetchRecentOrders();
       _fetchData(showSpinner: false);
@@ -59,7 +57,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     super.dispose();
   }
 
-  // Timezone Helper: Only used for visual UI text now!
   DateTime _parseDatabaseTime(String? dateStr) {
     if (dateStr == null) return DateTime.now().toUtc();
     String formattedDate = dateStr;
@@ -69,7 +66,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return DateTime.parse(formattedDate).toUtc();
   }
 
-  // Load seen orders timestamp from physical storage
   Future<void> _initPrefsAndOrders() async {
     _prefs = await SharedPreferences.getInstance();
     final String? savedTime = _prefs?.getString('admin_last_seen_order_time');
@@ -77,7 +73,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     if (savedTime != null) {
       _lastSeenTimeStr = savedTime;
     } else {
-      // Set to 24 hours ago for new installs
       _lastSeenTimeStr = DateTime.now()
           .toUtc()
           .subtract(const Duration(days: 1))
@@ -86,19 +81,17 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     }
 
     _fetchRecentOrders();
-    _listenToDatabase(); // Start listening AFTER we know the last seen time
+    _listenToDatabase();
   }
 
-  // 👇 THE BULLETPROOF NOTIFICATION FETCH
   Future<void> _fetchRecentOrders() async {
     try {
-      // 1. Tell Supabase to ONLY send us orders created AFTER the exact timestamp we saved
       final res = await client
           .from('orders')
           .select()
           .gt('created_at', _lastSeenTimeStr)
           .order('created_at', ascending: false)
-          .limit(50); // Get up to 50 unread orders
+          .limit(50);
 
       if (mounted) {
         setState(() {
@@ -111,7 +104,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     }
   }
 
-  // Fetch product data with variants
   Future<void> _fetchData({bool showSpinner = true}) async {
     if (!mounted) return;
     if (showSpinner) setState(() => _isLoading = true);
@@ -155,7 +147,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     }
   }
 
-  // Delete product action
   Future<void> _deleteProduct(Map<String, dynamic> product) async {
     final bool? confirm = await showDialog<bool>(
       context: context,
@@ -189,7 +180,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     }
   }
 
-  // Open Edit Product Dialog
   void _openEditDialog(Map<String, dynamic> product) {
     showDialog(
       context: context,
@@ -202,7 +192,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     );
   }
 
-  // Timing helper for notification display
   String _timeAgo(String? dateTimeStr) {
     if (dateTimeStr == null) return '';
     final localDate = _parseDatabaseTime(dateTimeStr).toLocal();
@@ -216,7 +205,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return 'Just now';
   }
 
-  // Listen to Database Changes
   void _listenToDatabase() {
     _realtimeChannel = client.channel('admin_public_changes');
 
@@ -238,7 +226,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           schema: 'public',
           table: 'orders',
           callback: (payload) {
-            // 🎵 SWEET NOTIFICATION SOUND PLAYS HERE!
             FlutterRingtonePlayer().playNotification();
             _fetchRecentOrders();
           },
@@ -246,7 +233,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         .subscribe();
   }
 
-  // Show notifications dialog
   void _showNotifications() {
     setState(() => _unreadCount = 0);
 
@@ -360,71 +346,83 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                               )?.toInt() ??
                               0;
 
-                          return Container(
-                            color: itemBgColor,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 14,
-                            ),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(6),
-                                  decoration: BoxDecoration(
-                                    color: isDark
-                                        ? const Color(
-                                            0xFF1B5E20,
-                                          ).withOpacity(0.3)
-                                        : const Color(0xFFE8F5E9),
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: const Color(0xFF81C784),
-                                      width: 1.5,
+                          // 👇 NEW: InkWell makes the notification clickable to view order details
+                          return InkWell(
+                            onTap: () {
+                              Navigator.pop(
+                                context,
+                              ); // Close the notifications dropdown
+                              context.push(
+                                '/admin-order-details',
+                                extra: order,
+                              ); // Go to order details
+                            },
+                            child: Container(
+                              color: itemBgColor,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 14,
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(6),
+                                    decoration: BoxDecoration(
+                                      color: isDark
+                                          ? const Color(
+                                              0xFF1B5E20,
+                                            ).withOpacity(0.3)
+                                          : const Color(0xFFE8F5E9),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: const Color(0xFF81C784),
+                                        width: 1.5,
+                                      ),
+                                    ),
+                                    child: const Icon(
+                                      Icons.shopping_bag_outlined,
+                                      color: Color(0xFF4CAF50),
+                                      size: 16,
                                     ),
                                   ),
-                                  child: const Icon(
-                                    Icons.shopping_bag_outlined,
-                                    color: Color(0xFF4CAF50),
-                                    size: 16,
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          "New Order — Rs. $total",
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 13,
+                                            color: textColor,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          order['email'] ?? 'Unknown customer',
+                                          style: TextStyle(
+                                            color: Colors.grey[500],
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          _timeAgo(order['created_at']),
+                                          style: const TextStyle(
+                                            color: Color(0xFF4CAF50),
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        "New Order — Rs. $total",
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w900,
-                                          fontSize: 13,
-                                          color: textColor,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        order['email'] ?? 'Unknown customer',
-                                        style: TextStyle(
-                                          color: Colors.grey[500],
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        _timeAgo(order['created_at']),
-                                        style: const TextStyle(
-                                          color: Color(0xFF4CAF50),
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           );
                         },
@@ -481,15 +479,13 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         );
       },
     ).then((_) {
-      // 👇 THE FIX: Save exact newest timestamp
       if (mounted) {
         setState(() {
           if (_recentOrders.isNotEmpty) {
-            // Since it's ordered descending by the database, the first item is the newest
             _lastSeenTimeStr = _recentOrders.first['created_at'].toString();
             _prefs?.setString('admin_last_seen_order_time', _lastSeenTimeStr);
           }
-          _recentOrders.clear(); // Wipe UI
+          _recentOrders.clear();
           _unreadCount = 0;
         });
       }
@@ -594,7 +590,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           ),
         ),
         actions: [
-          // NOTIFICATION BELL
           Padding(
             padding: const EdgeInsets.only(right: 8.0),
             child: InkWell(

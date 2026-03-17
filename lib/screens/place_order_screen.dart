@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
 
+// 👇 IMPORT FOR EMAIL SERVICE
+import '../services/email_service.dart';
+
 class PlaceOrderScreen extends StatefulWidget {
   final List<Map<String, dynamic>> items;
   final double total;
@@ -188,6 +191,10 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
           'product_name': item['name'],
           'price': item['price'],
           'quantity': item['qty'],
+          'product_image': item['image'],
+          'variant_weight':
+              item['weight'] ??
+              item['variant_weight'], // Ensure weight is tracked
         };
       }).toList();
 
@@ -229,6 +236,34 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
             debugPrint("Failed to update stock for variant $variantId: $e");
           }
         }
+      }
+
+      // 👇 4. FIRE THE AUTOMATED EMAIL (to Customer AND Admin)!
+      try {
+        final firstName = _selectedAddress!['first_name'] ?? '';
+        final lastName = _selectedAddress!['last_name'] == 'EMPTY'
+            ? ''
+            : (_selectedAddress!['last_name'] ?? '');
+        final custName = '$firstName $lastName'.trim().isEmpty
+            ? 'Customer'
+            : '$firstName $lastName'.trim();
+
+        // Grab the full address string for the Admin email
+        final fullAddress =
+            "${_selectedAddress!['address']}, ${_selectedAddress!['city']}, ${_selectedAddress!['pin_code']}";
+
+        await EmailService.sendOrderConfirmation(
+          customerEmail: email,
+          customerName: custName,
+          orderId: newOrderId.toString(),
+          cartItems: widget.items,
+          totalAmount: widget.total.toInt(),
+          customerPhone: cleanPhone, // 👈 Passed to Admin
+          customerAddress: fullAddress, // 👈 Passed to Admin
+        );
+      } catch (emailError) {
+        // If the email fails, we catch the error silently so the user still sees the Success Screen!
+        debugPrint("Failed to send order email: $emailError");
       }
 
       if (mounted) {
@@ -341,7 +376,6 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
           ...widget.items.map((item) {
             final itemPrice = (item['price'] as num?)?.toInt() ?? 0;
 
-            // 👇 THE FIX: Robust Image Validation
             final String imageUrl = item['image']?.toString() ?? "";
             final bool hasValidImage =
                 imageUrl.isNotEmpty && imageUrl.startsWith('http');
@@ -359,7 +393,6 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                             width: 48,
                             height: 48,
                             fit: BoxFit.cover,
-                            // 👇 THE FIX: Error Builder catches crashes silently
                             errorBuilder: (context, error, stackTrace) =>
                                 Container(
                                   width: 48,
