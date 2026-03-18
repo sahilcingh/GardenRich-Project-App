@@ -125,6 +125,87 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
     );
   }
 
+  void _showConfirmationDialog() {
+    // 1. We check if all fields are filled BEFORE showing the popup
+    final email = _emailController.text.trim();
+    final rawPhone = _phoneController.text.trim();
+    final cleanPhone = rawPhone.replaceAll(RegExp(r'\D'), '');
+
+    if (email.isEmpty ||
+        rawPhone.isEmpty ||
+        cleanPhone.length != 10 ||
+        _selectedAddress == null) {
+      // If data is missing, we just trigger the normal order function
+      // so it can show your existing error popups!
+      _placeOrderNow();
+      return;
+    }
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // 2. Show the beautiful confirmation dialog
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: isDark ? Colors.grey[900] : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.shopping_bag_outlined, color: Color(0xFF92D050)),
+            const SizedBox(width: 10),
+            Text(
+              "Confirm Order",
+              style: TextStyle(
+                color: isDark ? Colors.white : Colors.black87,
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          "Are you sure you want to place this order for Rs. ${widget.total.toInt()}? You will pay via Cash on Delivery.",
+          style: TextStyle(
+            color: isDark ? Colors.grey[300] : Colors.grey[700],
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(ctx), // Closes the dialog, does nothing
+            child: Text(
+              "Cancel",
+              style: TextStyle(
+                color: Colors.grey[500],
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx); // Closes the dialog
+              _placeOrderNow(); // 👇 ACTUALLY PLACES THE ORDER!
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF92D050),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text(
+              "Yes, Place Order",
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _placeOrderNow() async {
     final email = _emailController.text.trim();
     final rawPhone = _phoneController.text.trim();
@@ -952,7 +1033,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                 width: double.infinity,
                 height: 56,
                 child: ElevatedButton(
-                  onPressed: _isProcessing ? null : _placeOrderNow,
+                  onPressed: _isProcessing ? null : _showConfirmationDialog,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF1b5e20),
                     shape: RoundedRectangleBorder(

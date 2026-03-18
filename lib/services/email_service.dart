@@ -20,11 +20,13 @@ class EmailService {
   }) async {
     final smtpServer = gmail(_gmailAddress, _appPassword);
 
-    // --- BUILD THE ITEMS TABLE ROWS (Updated to match your design!) ---
+    // --- BUILD THE ITEMS TABLE ROWS AND CALCULATE SUBTOTAL ---
     String itemsHtml = '';
+    int subtotalAmount = 0; // 👈 ADDED: We calculate the true subtotal here!
+
     for (var item in cartItems) {
       final name = item['product_name'] ?? item['name'] ?? 'Item';
-      final qty = item['qty'] ?? 1;
+      final qty = int.tryParse(item['qty']?.toString() ?? '1') ?? 1;
       final price =
           double.tryParse(item['price']?.toString() ?? '0')?.toInt() ?? 0;
       final imageUrl = item['image']?.toString() ?? '';
@@ -32,9 +34,10 @@ class EmailService {
           item['variant_weight']?.toString() ??
           item['weight']?.toString() ??
           '-';
-      final itemTotal = price * qty;
+      final int itemTotal = price * qty;
 
-      // Wrap the image in the white rounded box exactly like the screenshot
+      subtotalAmount += itemTotal; // 👈 Add to subtotal
+
       final imageTag = imageUrl.isNotEmpty
           ? '<img src="$imageUrl" width="50" height="50" style="background-color: #ffffff; border-radius: 8px; padding: 4px; object-fit: contain;">'
           : '<div style="width: 50px; height: 50px; background-color: #ffffff; border-radius: 8px;"></div>';
@@ -61,8 +64,12 @@ class EmailService {
       ''';
     }
 
+    // 👇 ADDED: Calculate shipping fee based on the difference
+    int shippingFee = totalAmount - subtotalAmount;
+    String shippingText = shippingFee > 0 ? 'Rs. $shippingFee' : 'FREE';
+
     // ==========================================
-    // 🟢 EMAIL 1: FOR THE CUSTOMER (MATCHING SCREENSHOT)
+    // 🟢 EMAIL 1: FOR THE CUSTOMER
     // ==========================================
     final customerHtmlBody =
         '''
@@ -91,8 +98,8 @@ class EmailService {
           </table>
 
           <div style="margin-top: 20px; padding-bottom: 10px; text-align: right;">
-            <p style="color: #d4d4d8; font-size: 14px; margin: 5px 0;">Subtotal: Rs. $totalAmount</p>
-            <p style="color: #d4d4d8; font-size: 14px; margin: 5px 0;">Shipping: FREE</p>
+            <p style="color: #d4d4d8; font-size: 14px; margin: 5px 0;">Subtotal: Rs. $subtotalAmount</p>
+            <p style="color: #d4d4d8; font-size: 14px; margin: 5px 0;">Shipping: $shippingText</p>
             <h3 style="color: #22c55e; margin: 10px 0; font-size: 20px;">Total: Rs. $totalAmount</h3>
           </div>
           
@@ -119,7 +126,7 @@ class EmailService {
       ..html = customerHtmlBody;
 
     // ==========================================
-    // ⚫ EMAIL 2: FOR THE ADMIN (UPDATED TO MATCH NEW 4-COLUMN TABLE)
+    // ⚫ EMAIL 2: FOR THE ADMIN
     // ==========================================
     final adminHtmlBody =
         '''
@@ -152,8 +159,8 @@ class EmailService {
           </table>
           
           <div style="margin-top: 20px; border-top: 1px solid #333; padding-top: 20px; text-align: right;">
-            <p style="color: #d4d4d8; font-size: 14px; margin: 5px 0;">Subtotal: Rs. $totalAmount</p>
-            <p style="color: #d4d4d8; font-size: 14px; margin: 5px 0;">Shipping: FREE</p>
+            <p style="color: #d4d4d8; font-size: 14px; margin: 5px 0;">Subtotal: Rs. $subtotalAmount</p>
+            <p style="color: #d4d4d8; font-size: 14px; margin: 5px 0;">Shipping: $shippingText</p>
             <h3 style="color: #22c55e; margin: 10px 0; font-size: 20px;">Total: Rs. $totalAmount</h3>
           </div>
           

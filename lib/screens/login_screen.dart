@@ -15,13 +15,11 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
-  // Controllers for the Sign Up fields
   final _nameController = TextEditingController();
   final _mobileController = TextEditingController();
 
   bool _isLoading = false;
 
-  // Colors matched exactly to your screenshots
   final Color _bgColor = const Color(0xFF2C3931);
   final Color _fieldColor = const Color(0xFF3F4D45);
   final Color _primaryGreen = const Color(0xFF92D050);
@@ -41,11 +39,8 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  // 👇 Custom function to show a beautiful, themed error popup
   void _showErrorDialog(String title, String message) {
-    // Safety check: Don't try to show a dialog if the screen is already closing
     if (!mounted) return;
-
     showDialog(
       context: context,
       builder: (ctx) {
@@ -76,8 +71,8 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           content: Text(
             message,
-            style: const TextStyle(
-              color: Colors.white70,
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.7),
               fontSize: 15,
               height: 1.4,
             ),
@@ -100,8 +95,343 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
+  // =====================================================================
+  // 🌟 3-Step OTP Password Reset Popup
+  // =====================================================================
+  void _showForgotPasswordPopup(BuildContext context) {
+    int step = 1; // 1 = Email, 2 = OTP, 3 = New Password
+    bool isProcessing = false;
+
+    final resetEmailController = TextEditingController();
+    final otpController = TextEditingController();
+    final newPasswordController = TextEditingController();
+
+    if (_emailController.text.isNotEmpty &&
+        _emailController.text.contains('@')) {
+      resetEmailController.text = _emailController.text;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              backgroundColor: _fieldColor,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: Row(
+                children: [
+                  Icon(Icons.lock_reset, color: _primaryGreen, size: 28),
+                  const SizedBox(width: 10),
+                  Text(
+                    step == 1
+                        ? "Reset Password"
+                        : step == 2
+                        ? "Enter OTP Code"
+                        : "Create New Password",
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  ),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // --- STEP 1: EMAIL ---
+                  if (step == 1) ...[
+                    Text(
+                      "Enter your registered email. We will send you a 6-digit verification code.",
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.7),
+                        fontSize: 14,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: resetEmailController,
+                      keyboardType: TextInputType.emailAddress,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: "Email Address",
+                        hintStyle: TextStyle(
+                          color: Colors.white.withOpacity(0.5),
+                        ),
+                        prefixIcon: Icon(
+                          Icons.email_outlined,
+                          color: Colors.white.withOpacity(0.5),
+                          size: 20,
+                        ),
+                        filled: true,
+                        fillColor: _bgColor,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  // --- STEP 2: OTP CODE ---
+                  if (step == 2) ...[
+                    Text(
+                      "Enter the 6-digit code we just sent to:\n${resetEmailController.text}",
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.7),
+                        fontSize: 14,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: otpController,
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.center,
+                      maxLength: 6,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        letterSpacing: 8,
+                        fontWeight: FontWeight.w900,
+                      ),
+                      decoration: InputDecoration(
+                        counterText: "",
+                        hintText: "000000",
+                        hintStyle: TextStyle(
+                          color: Colors.white.withOpacity(0.3),
+                          letterSpacing: 8,
+                        ),
+                        filled: true,
+                        fillColor: _bgColor,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 16,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  // --- STEP 3: NEW PASSWORD ---
+                  if (step == 3) ...[
+                    Text(
+                      "Code verified! Please enter your new password below.",
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.7),
+                        fontSize: 14,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      key: const ValueKey(
+                        'new_password_field',
+                      ), // 👇 FORCES FLUTTER TO REFRESH THE KEYBOARD
+                      controller: newPasswordController,
+                      keyboardType: TextInputType
+                          .visiblePassword, // 👇 REQUESTS THE FULL ALPHABET KEYBOARD
+                      obscureText: true,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: "New Password",
+                        hintStyle: TextStyle(
+                          color: Colors.white.withOpacity(0.5),
+                        ),
+                        prefixIcon: Icon(
+                          Icons.lock_outline,
+                          color: Colors.white.withOpacity(0.5),
+                          size: 20,
+                        ),
+                        filled: true,
+                        fillColor: _bgColor,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isProcessing ? null : () => Navigator.pop(context),
+                  child: Text(
+                    "Cancel",
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.5),
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: isProcessing
+                      ? null
+                      : () async {
+                          if (step == 1) {
+                            final email = resetEmailController.text.trim();
+                            if (email.isEmpty || !email.contains('@')) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text("Enter a valid email"),
+                                  backgroundColor: Colors.redAccent,
+                                ),
+                              );
+                              return;
+                            }
+                            setState(() => isProcessing = true);
+                            try {
+                              await Supabase.instance.client.auth
+                                  .resetPasswordForEmail(email);
+                              setState(() {
+                                step = 2;
+                                isProcessing = false;
+                              });
+                            } catch (e) {
+                              setState(() => isProcessing = false);
+                              Navigator.pop(context);
+                              _showErrorDialog(
+                                "Email Failed",
+                                e.toString().replaceAll('Exception: ', ''),
+                              );
+                            }
+                          } else if (step == 2) {
+                            final otp = otpController.text.trim();
+                            if (otp.length != 6) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text("Enter the full 6-digit code"),
+                                  backgroundColor: Colors.redAccent,
+                                ),
+                              );
+                              return;
+                            }
+                            setState(() => isProcessing = true);
+                            try {
+                              await Supabase.instance.client.auth.verifyOTP(
+                                email: resetEmailController.text.trim(),
+                                token: otp,
+                                type: OtpType.recovery,
+                              );
+                              setState(() {
+                                step = 3;
+                                isProcessing = false;
+                              });
+                            } catch (e) {
+                              setState(() => isProcessing = false);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text("Invalid or expired code"),
+                                  backgroundColor: Colors.redAccent,
+                                ),
+                              );
+                            }
+                          } else if (step == 3) {
+                            final newPass = newPasswordController.text.trim();
+                            if (newPass.length < 6) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    "Password must be at least 6 characters",
+                                  ),
+                                  backgroundColor: Colors.redAccent,
+                                ),
+                              );
+                              return;
+                            }
+                            setState(() => isProcessing = true);
+                            try {
+                              await Supabase.instance.client.auth.updateUser(
+                                UserAttributes(password: newPass),
+                              );
+                              if (context.mounted) {
+                                Navigator.pop(context);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: const Text(
+                                      "Password updated successfully! You can now log in.",
+                                      style: TextStyle(
+                                        color: Colors.black,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    backgroundColor: _primaryGreen,
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              setState(() => isProcessing = false);
+                              Navigator.pop(context);
+                              _showErrorDialog(
+                                "Update Failed",
+                                e.toString().replaceAll('Exception: ', ''),
+                              );
+                            }
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _primaryGreen,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: isProcessing
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            color: Colors.black,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : Text(
+                          step == 1
+                              ? "Send Code"
+                              : step == 2
+                              ? "Verify"
+                              : "Update Password",
+                          style: const TextStyle(
+                            color: Colors.black,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+  // =====================================================================
+
   Future<void> _authenticate() async {
-    // 1. Quick Validation: Make sure fields aren't empty first!
     if (_emailController.text.trim().isEmpty ||
         _passwordController.text.trim().isEmpty) {
       _showErrorDialog(
@@ -124,13 +454,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       if (_isLogin) {
-        // Logging in
         await Supabase.instance.client.auth.signInWithPassword(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
         );
       } else {
-        // Signing up (Saving Name and Mobile to Supabase)
         await Supabase.instance.client.auth.signUp(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
@@ -142,10 +470,8 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
 
-      // 👇 THE CRITICAL ROUTING UPDATE 👇
       final user = Supabase.instance.client.auth.currentUser;
       if (user != null && user.email != null) {
-        // Ask Supabase what role this user is
         final profileResponse = await Supabase.instance.client
             .from('profiles')
             .select('role')
@@ -155,7 +481,6 @@ class _LoginScreenState extends State<LoginScreen> {
         final role =
             profileResponse?['role']?.toString().toUpperCase() ?? 'USER';
 
-        // Route perfectly based on role!
         if (mounted) {
           if (role == 'ADMIN') {
             context.go('/admin-home');
@@ -165,7 +490,6 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
     } catch (e) {
-      // 👇 BULLETPROOF ERROR CATCHING
       if (mounted) {
         String title = "Authentication Failed";
         String friendlyMessage = "Something went wrong. Please try again.";
@@ -221,11 +545,9 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Eco Leaf Logo
               Icon(Icons.eco, color: _primaryGreen, size: 60),
               const SizedBox(height: 16),
 
-              // Title
               Text(
                 _isLogin ? "Welcome Back" : "Create Account",
                 style: const TextStyle(
@@ -237,7 +559,6 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 40),
 
-              // Show Full Name and Mobile only if Sign Up mode
               if (!_isLogin) ...[
                 _buildTextField(
                   controller: _nameController,
@@ -255,7 +576,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 16),
               ],
 
-              // Email Field
               _buildTextField(
                 controller: _emailController,
                 hint: 'Email',
@@ -264,16 +584,40 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 16),
 
-              // Password Field
               _buildTextField(
                 controller: _passwordController,
                 hint: 'Password',
                 icon: Icons.lock_outline,
                 isPassword: true,
               ),
-              const SizedBox(height: 32),
 
-              // Login / Sign Up Button
+              if (_isLogin)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => _showForgotPasswordPopup(context),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.only(
+                        top: 12,
+                        bottom: 24,
+                        right: 4,
+                      ),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: Text(
+                      "Forgot Password?",
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.7),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                )
+              else
+                const SizedBox(height: 32),
+
               _isLoading
                   ? CircularProgressIndicator(color: _primaryGreen)
                   : SizedBox(
@@ -300,7 +644,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
               const SizedBox(height: 24),
 
-              // Toggle Text
               GestureDetector(
                 onTap: () {
                   setState(() {
@@ -344,7 +687,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  // Helper widget to keep the form code clean and perfectly rounded
   Widget _buildTextField({
     required TextEditingController controller,
     required String hint,
@@ -362,8 +704,8 @@ class _LoginScreenState extends State<LoginScreen> {
       style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(
-          color: Colors.white70,
+        hintStyle: TextStyle(
+          color: Colors.white.withOpacity(0.7),
           fontWeight: FontWeight.w600,
         ),
         prefixIcon: Padding(
