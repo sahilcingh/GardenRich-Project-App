@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
+import 'package:intl/intl.dart';
 
 import '../widgets/home_footer.dart';
 
@@ -88,15 +89,19 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     try {
       final res = await client
           .from('orders')
-          .select()
-          .gt('created_at', _lastSeenTimeStr)
+          .select('*, addresses(*)')
           .order('created_at', ascending: false)
           .limit(50);
 
       if (mounted) {
         setState(() {
           _recentOrders = List<Map<String, dynamic>>.from(res);
-          _unreadCount = _recentOrders.length;
+
+          final lastSeen = DateTime.parse(_lastSeenTimeStr).toUtc();
+          _unreadCount = _recentOrders.where((o) {
+            final orderTime = _parseDatabaseTime(o['created_at']);
+            return orderTime.isAfter(lastSeen);
+          }).length;
         });
       }
     } catch (e) {
@@ -206,6 +211,29 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return 'Just now';
   }
 
+  String _formatDate(String? dateString) {
+    if (dateString == null || dateString.isEmpty) return 'Unknown Date';
+    try {
+      String safeDate = dateString;
+      if (!safeDate.endsWith('Z')) safeDate += 'Z';
+      final dateTime = DateTime.parse(safeDate).toLocal();
+      return DateFormat('dd MMM yyyy, h:mm a').format(dateTime);
+    } catch (e) {
+      return dateString;
+    }
+  }
+
+  void _showOrderDetailsPopup(Map<String, dynamic> order) {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => _AdminOrderDetailsDialog(
+        order: order,
+        formattedDate: _formatDate(order['created_at']?.toString()),
+      ),
+    );
+  }
+
   void _listenToDatabase() {
     _realtimeChannel = client.channel('admin_public_changes');
 
@@ -234,13 +262,14 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         .subscribe();
   }
 
-  void _clearNotifications() {
+  void _markAllRead() {
     if (_recentOrders.isNotEmpty) {
-      _lastSeenTimeStr = _recentOrders.first['created_at'].toString();
+      _lastSeenTimeStr = _parseDatabaseTime(
+        _recentOrders.first['created_at'],
+      ).toIso8601String();
       _prefs?.setString('admin_last_seen_order_time', _lastSeenTimeStr);
     }
     setState(() {
-      _recentOrders.clear();
       _unreadCount = 0;
     });
   }
@@ -255,9 +284,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         final isDark = Theme.of(context).brightness == Brightness.dark;
         final bgColor = isDark ? const Color(0xFF1c1c1e) : Colors.white;
         final textColor = isDark ? Colors.white : Colors.black87;
-        final itemBgColor = isDark
-            ? const Color(0xFF1A2A1A)
-            : const Color(0xFFF2FAF2);
 
         final screenWidth = MediaQuery.of(context).size.width;
         final screenHeight = MediaQuery.of(context).size.height;
@@ -284,7 +310,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // 👇 FIXED NOTIFICATIONS HEADER: Expanded used to stop overflow
                   Padding(
                     padding: const EdgeInsets.all(16.0),
                     child: Row(
@@ -308,7 +333,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                "New orders will appear here",
+                                "Recent orders are listed here",
                                 style: TextStyle(
                                   fontSize: 11,
                                   color: Colors.grey.shade500,
@@ -323,16 +348,16 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            if (_recentOrders.isNotEmpty)
+                            if (_unreadCount > 0)
                               InkWell(
                                 onTap: () {
                                   Navigator.pop(context);
-                                  _clearNotifications();
+                                  _markAllRead();
                                 },
                                 child: const Padding(
                                   padding: EdgeInsets.only(right: 16.0),
                                   child: Text(
-                                    "CLEAR ALL",
+                                    "MARK ALL READ",
                                     style: TextStyle(
                                       color: Colors.blueAccent,
                                       fontWeight: FontWeight.bold,
@@ -358,12 +383,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                     ),
                   ),
 
-                  // LIST
                   if (_recentOrders.isEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 40.0),
                       child: Text(
-                        "No new notifications",
+                        "No recent notifications",
                         style: TextStyle(
                           color: Colors.grey.shade500,
                           fontSize: 13,
@@ -378,10 +402,27 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                         itemCount: _recentOrders.length,
                         separatorBuilder: (context, index) => Divider(
                           height: 1,
-                          color: isDark ? Colors.grey[800] : Colors.white,
+                          color: isDark
+                              ? Colors.grey[800]
+                              : Colors.grey.shade100,
                         ),
                         itemBuilder: (context, index) {
                           final order = _recentOrders[index];
+
+                          final orderTime = _parseDatabaseTime(
+                            order['created_at'],
+                          );
+                          final lastSeen = DateTime.parse(
+                            _lastSeenTimeStr,
+                          ).toUtc();
+                          final isUnread = orderTime.isAfter(lastSeen);
+
+                          final itemBgColor = isUnread
+                              ? (isDark
+                                    ? const Color(0xFF1A2A1A)
+                                    : const Color(0xFFF2FAF2))
+                              : Colors.transparent;
+
                           final total =
                               double.tryParse(
                                 order['total']?.toString() ?? '0',
@@ -391,10 +432,32 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                           return InkWell(
                             onTap: () {
                               Navigator.pop(context);
-                              context.push(
-                                '/admin-order-details',
-                                extra: order,
+
+                              final clickedOrderTime = _parseDatabaseTime(
+                                order['created_at'],
                               );
+                              final currentLastSeen = DateTime.parse(
+                                _lastSeenTimeStr,
+                              ).toUtc();
+
+                              if (clickedOrderTime.isAfter(currentLastSeen)) {
+                                setState(() {
+                                  _lastSeenTimeStr = clickedOrderTime
+                                      .toIso8601String();
+                                  _prefs?.setString(
+                                    'admin_last_seen_order_time',
+                                    _lastSeenTimeStr,
+                                  );
+
+                                  _unreadCount = _recentOrders.where((o) {
+                                    return _parseDatabaseTime(
+                                      o['created_at'],
+                                    ).isAfter(clickedOrderTime);
+                                  }).length;
+                                });
+                              }
+
+                              _showOrderDetailsPopup(order);
                             },
                             child: Container(
                               color: itemBgColor,
@@ -405,23 +468,42 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
+                                  if (isUnread)
+                                    Container(
+                                      width: 8,
+                                      height: 8,
+                                      margin: const EdgeInsets.only(
+                                        top: 10,
+                                        right: 8,
+                                      ),
+                                      decoration: const BoxDecoration(
+                                        color: Color(0xFF16a34a),
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
                                   Container(
                                     padding: const EdgeInsets.all(6),
                                     decoration: BoxDecoration(
                                       color: isDark
                                           ? const Color(
                                               0xFF16a34a,
-                                            ).withOpacity(0.3)
-                                          : const Color(0xFFE8F5E9),
+                                            ).withOpacity(isUnread ? 0.3 : 0.1)
+                                          : (isUnread
+                                                ? const Color(0xFFE8F5E9)
+                                                : Colors.grey.shade100),
                                       shape: BoxShape.circle,
                                       border: Border.all(
-                                        color: const Color(0xFF81C784),
+                                        color: isUnread
+                                            ? const Color(0xFF81C784)
+                                            : Colors.grey.shade300,
                                         width: 1.5,
                                       ),
                                     ),
-                                    child: const Icon(
+                                    child: Icon(
                                       Icons.shopping_bag_outlined,
-                                      color: Color(0xFF4CAF50),
+                                      color: isUnread
+                                          ? const Color(0xFF4CAF50)
+                                          : Colors.grey.shade400,
                                       size: 16,
                                     ),
                                   ),
@@ -434,7 +516,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                                         Text(
                                           "New Order — Rs. $total",
                                           style: TextStyle(
-                                            fontWeight: FontWeight.w900,
+                                            fontWeight: isUnread
+                                                ? FontWeight.w900
+                                                : FontWeight.w600,
                                             fontSize: 13,
                                             color: textColor,
                                           ),
@@ -455,8 +539,10 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                                         const SizedBox(height: 4),
                                         Text(
                                           _timeAgo(order['created_at']),
-                                          style: const TextStyle(
-                                            color: Color(0xFF4CAF50),
+                                          style: TextStyle(
+                                            color: isUnread
+                                                ? const Color(0xFF4CAF50)
+                                                : Colors.grey.shade400,
                                             fontSize: 11,
                                             fontWeight: FontWeight.bold,
                                           ),
@@ -472,7 +558,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       ),
                     ),
 
-                  // FOOTER
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
@@ -491,7 +576,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          "${_recentOrders.length} unread",
+                          _unreadCount > 0
+                              ? "$_unreadCount unread"
+                              : "All caught up!",
                           style: TextStyle(
                             color: Colors.grey[500],
                             fontSize: 12,
@@ -598,7 +685,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         title: FittedBox(
           fit: BoxFit.scaleDown,
           alignment: Alignment.centerLeft,
-          // 👇 FIXED LOGO: Replaced RichText with Row to prevent vertical word stacking
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1867,6 +1953,486 @@ class _EditProductDialogState extends State<EditProductDialog> {
                       "Save Changes",
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AdminOrderDetailsDialog extends StatefulWidget {
+  final Map<String, dynamic> order;
+  final String formattedDate;
+
+  const _AdminOrderDetailsDialog({
+    required this.order,
+    required this.formattedDate,
+  });
+
+  @override
+  State<_AdminOrderDetailsDialog> createState() =>
+      _AdminOrderDetailsDialogState();
+}
+
+class _AdminOrderDetailsDialogState extends State<_AdminOrderDetailsDialog> {
+  List<Map<String, dynamic>> _orderItems = [];
+  bool _isLoading = true;
+
+  String _customerAddress = "No Address Provided";
+  String _customerName = "Guest Customer";
+  String _customerPhone = "No Phone";
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchOrderItemsAndParseAddress();
+  }
+
+  Future<void> _fetchOrderItemsAndParseAddress() async {
+    try {
+      final orderId = widget.order['id'].toString();
+
+      final itemsRes = await Supabase.instance.client
+          .from('order_items')
+          .select()
+          .eq('order_id', orderId);
+
+      List<Map<String, dynamic>> items = List<Map<String, dynamic>>.from(
+        itemsRes,
+      );
+
+      final productNames = items
+          .map((i) => (i['product_name'] ?? i['name'])?.toString())
+          .where((n) => n != null)
+          .toSet()
+          .toList();
+
+      if (productNames.isNotEmpty) {
+        final productsRes = await Supabase.instance.client
+            .from('products')
+            .select('name, image')
+            .inFilter('name', productNames);
+
+        Map<String, dynamic> imageMap = {};
+        for (var p in productsRes) {
+          if (p['name'] != null && p['image'] != null) {
+            imageMap[p['name'].toString()] = p['image'];
+          }
+        }
+        for (var item in items) {
+          final pName = (item['product_name'] ?? item['name'])?.toString();
+          if (pName != null && imageMap.containsKey(pName)) {
+            item['image'] = imageMap[pName];
+          }
+        }
+      }
+
+      String fetchedAddress = "No Address Provided";
+      String fetchedName =
+          widget.order['email']?.toString() ?? "Guest Customer";
+      String fetchedPhone = widget.order['phone']?.toString() ?? "No Phone";
+
+      final addrData = widget.order['addresses'];
+
+      if (addrData != null && addrData is Map) {
+        final street = addrData['address'] ?? '';
+        final city = addrData['city'] ?? '';
+        final pin = addrData['pin_code'] ?? '';
+
+        final fName = addrData['first_name'] ?? '';
+        final lName = addrData['last_name'] == 'EMPTY'
+            ? ''
+            : (addrData['last_name'] ?? '');
+        final fullName = '$fName $lName'.trim();
+
+        fetchedAddress = '$street, $city, $pin'
+            .replaceAll(RegExp(r'^, |, $'), '')
+            .trim();
+        if (fullName.isNotEmpty) fetchedName = fullName;
+        if (addrData['phone'] != null &&
+            addrData['phone'].toString().isNotEmpty) {
+          fetchedPhone = addrData['phone'].toString();
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _orderItems = items;
+          _customerAddress = fetchedAddress;
+          _customerName = fetchedName;
+          _customerPhone = fetchedPhone;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error: $e");
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bgColor = isDark ? Colors.grey[900]! : Colors.white;
+    final textColor = isDark ? Colors.white : Colors.black87;
+    final borderColor = isDark ? Colors.grey[800]! : Colors.grey.shade200;
+
+    final order = widget.order;
+    String orderId = order['id'].toString();
+    String displayId = orderId.length > 8 ? orderId.substring(0, 8) : orderId;
+
+    final total =
+        double.tryParse(order['total']?.toString() ?? '0')?.toInt() ?? 0;
+
+    int totalQty = 0;
+    for (var item in _orderItems) {
+      totalQty +=
+          int.tryParse(
+            item['quantity']?.toString() ?? item['qty']?.toString() ?? '1',
+          ) ??
+          1;
+    }
+
+    return Dialog(
+      backgroundColor: bgColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: Container(
+        width: double.infinity,
+        constraints: const BoxConstraints(maxWidth: 500, maxHeight: 700),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          "ORDER DETAILS",
+                          style: TextStyle(
+                            color: Color(0xFF16a34a),
+                            fontWeight: FontWeight.w900,
+                            fontSize: 10,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _customerName,
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            color: textColor,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          "#$displayId · ${widget.formattedDate}",
+                          style: TextStyle(
+                            color: Colors.grey[500],
+                            fontSize: 12,
+                          ),
+                        ),
+
+                        const SizedBox(height: 12),
+
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isDark ? Colors.grey[850] : Colors.grey[100],
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: borderColor),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(
+                                    Icons.location_on_outlined,
+                                    size: 14,
+                                    color: Colors.grey[500],
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _customerAddress,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: isDark
+                                            ? Colors.grey[400]
+                                            : Colors.grey[700],
+                                        height: 1.3,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.phone_outlined,
+                                    size: 14,
+                                    color: Colors.grey[500],
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    _customerPhone,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: isDark
+                                          ? Colors.grey[400]
+                                          : Colors.grey[700],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  InkWell(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.grey[800] : Colors.grey[100],
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.close,
+                        size: 20,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Divider(height: 1, color: borderColor),
+
+            Expanded(
+              child: _isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF16a34a),
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(20),
+                      itemCount: _orderItems.length,
+                      itemBuilder: (context, index) {
+                        final item = _orderItems[index];
+
+                        final int qty =
+                            int.tryParse(
+                              item['quantity']?.toString() ??
+                                  item['qty']?.toString() ??
+                                  '1',
+                            ) ??
+                            1;
+
+                        final price =
+                            double.tryParse(
+                              item['price']?.toString() ?? '0',
+                            )?.toInt() ??
+                            0;
+                        final imageUrl = item['image']?.toString() ?? '';
+                        final hasImage =
+                            imageUrl.isNotEmpty && imageUrl.startsWith('http');
+
+                        final weightStr =
+                            item['variant_weight']?.toString() ?? '';
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: bgColor,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: borderColor),
+                            boxShadow: [
+                              if (!isDark)
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.03),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Container(
+                                  width: 60,
+                                  height: 60,
+                                  color: isDark
+                                      ? Colors.grey[800]
+                                      : Colors.grey[100],
+                                  child: hasImage
+                                      ? Image.network(
+                                          imageUrl,
+                                          fit: BoxFit.cover,
+                                        )
+                                      : Icon(
+                                          Icons.image,
+                                          color: Colors.grey[400],
+                                        ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      item['product_name'] ??
+                                          item['name'] ??
+                                          'Unknown Item',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        color: textColor,
+                                        fontSize: 14,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Wrap(
+                                      spacing: 6,
+                                      crossAxisAlignment:
+                                          WrapCrossAlignment.center,
+                                      children: [
+                                        if (weightStr.isNotEmpty)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 6,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: isDark
+                                                  ? Colors.grey[800]
+                                                  : Colors.grey[100],
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                            ),
+                                            child: Text(
+                                              weightStr,
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                                color: isDark
+                                                    ? Colors.grey[300]
+                                                    : Colors.grey[700],
+                                              ),
+                                            ),
+                                          ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.blue.withOpacity(0.1),
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            "×$qty",
+                                            style: const TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.blue,
+                                            ),
+                                          ),
+                                        ),
+                                        Text(
+                                          "@ Rs. $price",
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.grey[500],
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                "Rs. ${price * qty}",
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: textColor,
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+
+            Container(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.grey[850] : Colors.grey[50],
+                borderRadius: const BorderRadius.vertical(
+                  bottom: Radius.circular(16),
+                ),
+                border: Border(top: BorderSide(color: borderColor)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "ORDER TOTAL",
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: Colors.grey[500],
+                          fontSize: 12,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        "${_orderItems.length} item${_orderItems.length == 1 ? '' : 's'} · Total qty: $totalQty",
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    "Rs. $total",
+                    style: const TextStyle(
+                      color: Color(0xFF00a651),
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),

@@ -519,7 +519,6 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                               ),
                             ),
                             const SizedBox(width: 8),
-                            // 👇 FIXED BUG 1: Wrapped the center text in Expanded + FittedBox to prevent pushing arrows off screen
                             Expanded(
                               child: Column(
                                 children: [
@@ -873,7 +872,6 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.only(bottom: 40, top: 10),
-                  // 👇 FIXED BUG 2: Wrapped entire pagination in FittedBox. It will smoothly scale down if the screen is too narrow.
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
                     child: Row(
@@ -1276,7 +1274,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
 }
 
 // ============================================================================
-// THE POPUP DIALOG (REMAINS EXACTLY THE SAME)
+// THE POPUP DIALOG
 // ============================================================================
 class _AdminOrderDetailsDialog extends StatefulWidget {
   final Map<String, dynamic> order;
@@ -1314,6 +1312,7 @@ class _AdminOrderDetailsDialogState extends State<_AdminOrderDetailsDialog> {
           .from('order_items')
           .select()
           .eq('order_id', orderId);
+
       List<Map<String, dynamic>> items = List<Map<String, dynamic>>.from(
         itemsRes,
       );
@@ -1329,15 +1328,18 @@ class _AdminOrderDetailsDialogState extends State<_AdminOrderDetailsDialog> {
             .from('products')
             .select('name, image')
             .inFilter('name', productNames);
+
         Map<String, dynamic> imageMap = {};
         for (var p in productsRes) {
-          if (p['name'] != null && p['image'] != null)
+          if (p['name'] != null && p['image'] != null) {
             imageMap[p['name'].toString()] = p['image'];
+          }
         }
         for (var item in items) {
           final pName = (item['product_name'] ?? item['name'])?.toString();
-          if (pName != null && imageMap.containsKey(pName))
+          if (pName != null && imageMap.containsKey(pName)) {
             item['image'] = imageMap[pName];
+          }
         }
       }
 
@@ -1347,10 +1349,12 @@ class _AdminOrderDetailsDialogState extends State<_AdminOrderDetailsDialog> {
       String fetchedPhone = widget.order['phone']?.toString() ?? "No Phone";
 
       final addrData = widget.order['addresses'];
+
       if (addrData != null && addrData is Map) {
         final street = addrData['address'] ?? '';
         final city = addrData['city'] ?? '';
         final pin = addrData['pin_code'] ?? '';
+
         final fName = addrData['first_name'] ?? '';
         final lName = addrData['last_name'] == 'EMPTY'
             ? ''
@@ -1362,8 +1366,9 @@ class _AdminOrderDetailsDialogState extends State<_AdminOrderDetailsDialog> {
             .trim();
         if (fullName.isNotEmpty) fetchedName = fullName;
         if (addrData['phone'] != null &&
-            addrData['phone'].toString().isNotEmpty)
+            addrData['phone'].toString().isNotEmpty) {
           fetchedPhone = addrData['phone'].toString();
+        }
       }
 
       if (mounted) {
@@ -1376,6 +1381,7 @@ class _AdminOrderDetailsDialogState extends State<_AdminOrderDetailsDialog> {
         });
       }
     } catch (e) {
+      debugPrint("Error: $e");
       if (mounted) setState(() => _isLoading = false);
     }
   }
@@ -1390,10 +1396,19 @@ class _AdminOrderDetailsDialogState extends State<_AdminOrderDetailsDialog> {
     final order = widget.order;
     String orderId = order['id'].toString();
     String displayId = orderId.length > 8 ? orderId.substring(0, 8) : orderId;
+
     final total =
         double.tryParse(order['total']?.toString() ?? '0')?.toInt() ?? 0;
+
+    // 👇 BULLETPROOF QUANTITY FIX: Handles both Ints and Strings safely
     int totalQty = 0;
-    for (var item in _orderItems) totalQty += (item['qty'] as int?) ?? 1;
+    for (var item in _orderItems) {
+      totalQty +=
+          int.tryParse(
+            item['quantity']?.toString() ?? item['qty']?.toString() ?? '1',
+          ) ??
+          1;
+    }
 
     return Dialog(
       backgroundColor: bgColor,
@@ -1440,7 +1455,9 @@ class _AdminOrderDetailsDialogState extends State<_AdminOrderDetailsDialog> {
                             fontSize: 12,
                           ),
                         ),
+
                         const SizedBox(height: 12),
+
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
@@ -1520,6 +1537,7 @@ class _AdminOrderDetailsDialogState extends State<_AdminOrderDetailsDialog> {
               ),
             ),
             Divider(height: 1, color: borderColor),
+
             Expanded(
               child: _isLoading
                   ? const Center(
@@ -1532,7 +1550,16 @@ class _AdminOrderDetailsDialogState extends State<_AdminOrderDetailsDialog> {
                       itemCount: _orderItems.length,
                       itemBuilder: (context, index) {
                         final item = _orderItems[index];
-                        final qty = item['qty'] ?? 1;
+
+                        // 👇 BULLETPROOF ITEM QUANTITY
+                        final int qty =
+                            int.tryParse(
+                              item['quantity']?.toString() ??
+                                  item['qty']?.toString() ??
+                                  '1',
+                            ) ??
+                            1;
+
                         final price =
                             double.tryParse(
                               item['price']?.toString() ?? '0',
@@ -1541,6 +1568,7 @@ class _AdminOrderDetailsDialogState extends State<_AdminOrderDetailsDialog> {
                         final imageUrl = item['image']?.toString() ?? '';
                         final hasImage =
                             imageUrl.isNotEmpty && imageUrl.startsWith('http');
+
                         final weightStr =
                             item['variant_weight']?.toString() ?? '';
 
@@ -1676,6 +1704,7 @@ class _AdminOrderDetailsDialogState extends State<_AdminOrderDetailsDialog> {
                       },
                     ),
             ),
+
             Container(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
               decoration: BoxDecoration(
