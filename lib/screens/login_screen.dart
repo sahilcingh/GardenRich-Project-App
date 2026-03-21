@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
+import 'dart:async';
+import 'package:flutter/services.dart';
 
 class LoginScreen extends StatefulWidget {
   final bool initialIsLogin;
@@ -14,29 +16,65 @@ class _LoginScreenState extends State<LoginScreen> {
   late bool _isLogin;
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-
   final _nameController = TextEditingController();
   final _mobileController = TextEditingController();
 
   bool _isLoading = false;
 
+  Timer? _debounce;
+  bool _emailExistsError = false;
+
   final Color _bgColor = const Color(0xFF2C3931);
   final Color _fieldColor = const Color(0xFF3F4D45);
-  final Color _primaryGreen = const Color(0xFF92D050);
+  final Color _primaryGreen = const Color(0xFF16a34a);
 
   @override
   void initState() {
     super.initState();
     _isLogin = widget.initialIsLogin;
+    _emailController.addListener(_onEmailChanged);
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
+    _emailController.removeListener(_onEmailChanged);
     _emailController.dispose();
     _passwordController.dispose();
     _nameController.dispose();
     _mobileController.dispose();
     super.dispose();
+  }
+
+  void _onEmailChanged() {
+    if (_isLogin) return;
+
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+
+    final email = _emailController.text.trim();
+
+    if (email.isEmpty || !email.contains('@') || !email.contains('.')) {
+      if (_emailExistsError) setState(() => _emailExistsError = false);
+      return;
+    }
+
+    _debounce = Timer(const Duration(milliseconds: 800), () async {
+      try {
+        final res = await Supabase.instance.client
+            .from('profiles')
+            .select('email')
+            .eq('email', email.toLowerCase())
+            .maybeSingle();
+
+        if (mounted) {
+          setState(() {
+            _emailExistsError = res != null;
+          });
+        }
+      } catch (e) {
+        // Fails silently if table is empty or RLS blocks it
+      }
+    });
   }
 
   void _showErrorDialog(String title, String message) {
@@ -96,10 +134,187 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   // =====================================================================
-  // 🌟 3-Step OTP Password Reset Popup
+  // 🌟 Sign Up OTP Verification Popup (Saves to Profiles Table!)
   // =====================================================================
+  void _showSignUpOtpPopup(
+    BuildContext context,
+    String email,
+    String name,
+    String mobile,
+  ) {
+    final otpController = TextEditingController();
+    bool isVerifying = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              backgroundColor: _fieldColor,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: Row(
+                children: [
+                  Icon(
+                    Icons.mark_email_read_outlined,
+                    color: _primaryGreen,
+                    size: 28,
+                  ),
+                  const SizedBox(width: 10),
+                  const Text(
+                    "Verify Email",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  ),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "We just sent a 6-digit code to:\n$email\n\nPlease note: The code will only arrive if you entered a valid, active email address.",
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.7),
+                      fontSize: 14,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: otpController,
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                    maxLength: 6,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      letterSpacing: 8,
+                      fontWeight: FontWeight.w900,
+                    ),
+                    decoration: InputDecoration(
+                      counterText: "",
+                      hintText: "000000",
+                      hintStyle: TextStyle(
+                        color: Colors.grey[600],
+                        letterSpacing: 8,
+                      ),
+                      filled: true,
+                      fillColor: _bgColor,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 16,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isVerifying ? null : () => Navigator.pop(ctx),
+                  child: Text(
+                    "Cancel",
+                    style: TextStyle(
+                      color: Colors.grey[400],
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: isVerifying
+                      ? null
+                      : () async {
+                          final otp = otpController.text.trim();
+                          if (otp.length != 6) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text("Enter the full 6-digit code"),
+                                backgroundColor: Colors.redAccent,
+                              ),
+                            );
+                            return;
+                          }
+                          setState(() => isVerifying = true);
+                          try {
+                            final AuthResponse verifyRes = await Supabase
+                                .instance
+                                .client
+                                .auth
+                                .verifyOTP(
+                                  email: email,
+                                  token: otp,
+                                  type: OtpType.signup,
+                                );
+
+                            if (verifyRes.user != null) {
+                              await Supabase.instance.client
+                                  .from('profiles')
+                                  .upsert({
+                                    'id': verifyRes.user!.id,
+                                    'name': name,
+                                    'email': email,
+                                    'mobile': mobile,
+                                    'role': 'USER',
+                                  });
+                            }
+
+                            if (context.mounted) {
+                              Navigator.pop(ctx);
+                              await _routeUserAfterLogin();
+                            }
+                          } catch (e) {
+                            setState(() => isVerifying = false);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text("Invalid or expired code"),
+                                backgroundColor: Colors.redAccent,
+                              ),
+                            );
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _primaryGreen,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: isVerifying
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            color: Colors.black,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Text(
+                          "Verify & Login",
+                          style: TextStyle(
+                            color: Colors.black,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   void _showForgotPasswordPopup(BuildContext context) {
-    int step = 1; // 1 = Email, 2 = OTP, 3 = New Password
+    int step = 1;
     bool isProcessing = false;
 
     final resetEmailController = TextEditingController();
@@ -144,7 +359,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // --- STEP 1: EMAIL ---
                   if (step == 1) ...[
                     Text(
                       "Enter your registered email. We will send you a 6-digit verification code.",
@@ -165,12 +379,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       decoration: InputDecoration(
                         hintText: "Email Address",
-                        hintStyle: TextStyle(
-                          color: Colors.white.withOpacity(0.5),
-                        ),
+                        hintStyle: TextStyle(color: Colors.grey[400]),
                         prefixIcon: Icon(
                           Icons.email_outlined,
-                          color: Colors.white.withOpacity(0.5),
+                          color: Colors.grey[400],
                           size: 20,
                         ),
                         filled: true,
@@ -186,8 +398,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                   ],
-
-                  // --- STEP 2: OTP CODE ---
                   if (step == 2) ...[
                     Text(
                       "Enter the 6-digit code we just sent to:\n${resetEmailController.text}",
@@ -213,7 +423,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         counterText: "",
                         hintText: "000000",
                         hintStyle: TextStyle(
-                          color: Colors.white.withOpacity(0.3),
+                          color: Colors.grey[600],
                           letterSpacing: 8,
                         ),
                         filled: true,
@@ -229,8 +439,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                   ],
-
-                  // --- STEP 3: NEW PASSWORD ---
                   if (step == 3) ...[
                     Text(
                       "Code verified! Please enter your new password below.",
@@ -242,12 +450,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 16),
                     TextField(
-                      key: const ValueKey(
-                        'new_password_field',
-                      ), // 👇 FORCES FLUTTER TO REFRESH THE KEYBOARD
+                      key: const ValueKey('new_password_field'),
                       controller: newPasswordController,
-                      keyboardType: TextInputType
-                          .visiblePassword, // 👇 REQUESTS THE FULL ALPHABET KEYBOARD
+                      keyboardType: TextInputType.visiblePassword,
                       obscureText: true,
                       style: const TextStyle(
                         color: Colors.white,
@@ -256,12 +461,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       decoration: InputDecoration(
                         hintText: "New Password",
-                        hintStyle: TextStyle(
-                          color: Colors.white.withOpacity(0.5),
-                        ),
+                        hintStyle: TextStyle(color: Colors.grey[400]),
                         prefixIcon: Icon(
                           Icons.lock_outline,
-                          color: Colors.white.withOpacity(0.5),
+                          color: Colors.grey[400],
                           size: 20,
                         ),
                         filled: true,
@@ -285,7 +488,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: Text(
                     "Cancel",
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.5),
+                      color: Colors.grey[400],
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -296,15 +499,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       : () async {
                           if (step == 1) {
                             final email = resetEmailController.text.trim();
-                            if (email.isEmpty || !email.contains('@')) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text("Enter a valid email"),
-                                  backgroundColor: Colors.redAccent,
-                                ),
-                              );
-                              return;
-                            }
+                            if (email.isEmpty || !email.contains('@')) return;
                             setState(() => isProcessing = true);
                             try {
                               await Supabase.instance.client.auth
@@ -323,15 +518,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             }
                           } else if (step == 2) {
                             final otp = otpController.text.trim();
-                            if (otp.length != 6) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text("Enter the full 6-digit code"),
-                                  backgroundColor: Colors.redAccent,
-                                ),
-                              );
-                              return;
-                            }
+                            if (otp.length != 6) return;
                             setState(() => isProcessing = true);
                             try {
                               await Supabase.instance.client.auth.verifyOTP(
@@ -354,17 +541,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             }
                           } else if (step == 3) {
                             final newPass = newPasswordController.text.trim();
-                            if (newPass.length < 6) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    "Password must be at least 6 characters",
-                                  ),
-                                  backgroundColor: Colors.redAccent,
-                                ),
-                              );
-                              return;
-                            }
+                            if (newPass.length < 6) return;
                             setState(() => isProcessing = true);
                             try {
                               await Supabase.instance.client.auth.updateUser(
@@ -375,7 +552,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
                                     content: const Text(
-                                      "Password updated successfully! You can now log in.",
+                                      "Password updated successfully!",
                                       style: TextStyle(
                                         color: Colors.black,
                                         fontWeight: FontWeight.bold,
@@ -429,7 +606,27 @@ class _LoginScreenState extends State<LoginScreen> {
       },
     );
   }
-  // =====================================================================
+
+  Future<void> _routeUserAfterLogin() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user != null && user.email != null) {
+      final profileResponse = await Supabase.instance.client
+          .from('profiles')
+          .select('role')
+          .eq('email', user.email!.trim().toLowerCase())
+          .maybeSingle();
+
+      final role = profileResponse?['role']?.toString().toUpperCase() ?? 'USER';
+
+      if (mounted) {
+        if (role == 'ADMIN') {
+          context.go('/admin-home');
+        } else {
+          context.go('/home');
+        }
+      }
+    }
+  }
 
   Future<void> _authenticate() async {
     if (_emailController.text.trim().isEmpty ||
@@ -440,14 +637,31 @@ class _LoginScreenState extends State<LoginScreen> {
       );
       return;
     }
-    if (!_isLogin &&
-        (_nameController.text.trim().isEmpty ||
-            _mobileController.text.trim().isEmpty)) {
+
+    if (!_isLogin && _emailExistsError) {
       _showErrorDialog(
-        "Missing Info",
-        "Please fill out all fields to create an account.",
+        "Email Taken",
+        "This email is already registered. Please log in instead.",
       );
       return;
+    }
+
+    if (!_isLogin) {
+      if (_nameController.text.trim().isEmpty ||
+          _mobileController.text.trim().isEmpty) {
+        _showErrorDialog(
+          "Missing Info",
+          "Please fill out all fields to create an account.",
+        );
+        return;
+      }
+      if (_mobileController.text.trim().length != 10) {
+        _showErrorDialog(
+          "Invalid Mobile",
+          "Please enter exactly 10 digits for your mobile number.",
+        );
+        return;
+      }
     }
 
     setState(() => _isLoading = true);
@@ -458,35 +672,31 @@ class _LoginScreenState extends State<LoginScreen> {
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
         );
+        await _routeUserAfterLogin();
       } else {
-        await Supabase.instance.client.auth.signUp(
+        final res = await Supabase.instance.client.auth.signUp(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
-          data: {
+        );
+
+        if (res.session == null && res.user != null) {
+          if (mounted) {
+            _showSignUpOtpPopup(
+              context,
+              _emailController.text.trim(),
+              _nameController.text.trim(),
+              _mobileController.text.trim(),
+            );
+          }
+        } else if (res.user != null) {
+          await Supabase.instance.client.from('profiles').upsert({
+            'id': res.user!.id,
             'name': _nameController.text.trim(),
+            'email': res.user!.email,
             'mobile': _mobileController.text.trim(),
             'role': 'USER',
-          },
-        );
-      }
-
-      final user = Supabase.instance.client.auth.currentUser;
-      if (user != null && user.email != null) {
-        final profileResponse = await Supabase.instance.client
-            .from('profiles')
-            .select('role')
-            .eq('email', user.email!.trim().toLowerCase())
-            .maybeSingle();
-
-        final role =
-            profileResponse?['role']?.toString().toUpperCase() ?? 'USER';
-
-        if (mounted) {
-          if (role == 'ADMIN') {
-            context.go('/admin-home');
-          } else {
-            context.go('/home');
-          }
+          });
+          await _routeUserAfterLogin();
         }
       }
     } catch (e) {
@@ -506,6 +716,9 @@ class _LoginScreenState extends State<LoginScreen> {
           } else if (errorMessage.contains("password should be at least")) {
             friendlyMessage =
                 "Your password is too weak. Please use at least 6 characters.";
+          } else if (errorMessage.contains("email not confirmed")) {
+            friendlyMessage =
+                "You haven't verified your email yet. Please check your inbox for the OTP code.";
           } else {
             friendlyMessage = e.message;
           }
@@ -566,7 +779,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   icon: Icons.person_outline,
                 ),
                 const SizedBox(height: 16),
-
                 _buildTextField(
                   controller: _mobileController,
                   hint: 'Mobile Number',
@@ -582,8 +794,24 @@ class _LoginScreenState extends State<LoginScreen> {
                 icon: Icons.mail_outline,
                 isEmail: true,
               ),
-              const SizedBox(height: 16),
 
+              if (!_isLogin && _emailExistsError)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8.0, left: 12.0),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      "This email is already registered. Please log in.",
+                      style: TextStyle(
+                        color: Colors.red.shade400,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+
+              const SizedBox(height: 16),
               _buildTextField(
                 controller: _passwordController,
                 hint: 'Password',
@@ -649,6 +877,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   setState(() {
                     _isLogin = !_isLogin;
                     _passwordController.clear();
+                    _emailExistsError = false;
                     if (_isLogin) {
                       _nameController.clear();
                       _mobileController.clear();
@@ -701,6 +930,14 @@ class _LoginScreenState extends State<LoginScreen> {
       keyboardType: isEmail
           ? TextInputType.emailAddress
           : (isPhone ? TextInputType.phone : TextInputType.text),
+
+      inputFormatters: isPhone
+          ? [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(10),
+            ]
+          : null,
+
       style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
       decoration: InputDecoration(
         hintText: hint,

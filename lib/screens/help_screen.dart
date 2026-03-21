@@ -37,10 +37,10 @@ class HelpScreen extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: const Color(0xFF92D050).withOpacity(0.1),
+              color: const Color(0xFF16a34a).withOpacity(0.1),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: const Color(0xFF92D050).withOpacity(0.3),
+                color: const Color(0xFF16a34a).withOpacity(0.3),
               ),
             ),
             child: Column(
@@ -48,7 +48,7 @@ class HelpScreen extends StatelessWidget {
                 const Icon(
                   Icons.support_agent,
                   size: 40,
-                  color: Color(0xFF92D050),
+                  color: Color(0xFF16a34a),
                 ),
                 const SizedBox(height: 12),
                 Text(
@@ -93,22 +93,6 @@ class HelpScreen extends StatelessWidget {
             isDark,
           ),
           _buildFaqCard(
-            "Can I cancel my order?",
-            "Orders can only be cancelled while they are in the 'Pending' state. Please contact support for assistance.",
-            cardColor,
-            borderColor,
-            textColor,
-            isDark,
-          ),
-          _buildFaqCard(
-            "What is your refund policy?",
-            "If you receive a damaged product, please reach out to us within 24 hours of delivery for a full refund or replacement.",
-            cardColor,
-            borderColor,
-            textColor,
-            isDark,
-          ),
-          _buildFaqCard(
             "How do I change my address?",
             "You can manage your delivery addresses in the 'Address Book' section of your profile.",
             cardColor,
@@ -145,7 +129,7 @@ class HelpScreen extends StatelessWidget {
             color: textColor,
           ),
         ),
-        iconColor: const Color(0xFF92D050),
+        iconColor: const Color(0xFF16a34a),
         collapsedIconColor: Colors.grey,
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         children: [

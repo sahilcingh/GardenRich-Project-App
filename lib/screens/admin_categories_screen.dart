@@ -13,7 +13,6 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
   final client = Supabase.instance.client;
   bool _isLoading = false;
 
-  // Replicates the slug generation seen in your database
   String _generateSlug(String name) {
     return name.toLowerCase().trim().replaceAll(RegExp(r'[^a-z0-9]+'), '-');
   }
@@ -33,21 +32,21 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("Category added successfully!"),
-            backgroundColor: Color(0xFF92D050),
+            backgroundColor: Color(0xFF16a34a),
           ),
         );
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text("Error: $e")));
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // 👇 FIXED: Using the updated Supabase syntax to fetch the product count
   Future<int> _getProductCount(String categoryName) async {
     try {
       final count = await client
@@ -137,7 +136,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                         child: ElevatedButton(
                           onPressed: _isLoading ? null : _addCategory,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF92D050),
+                            backgroundColor: const Color(0xFF16a34a),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
@@ -237,6 +236,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                           final isProtected = catName == "All Products";
 
                           return Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
                               Container(
                                 padding: const EdgeInsets.all(8),
@@ -251,6 +251,8 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                                 ),
                               ),
                               const SizedBox(width: 16),
+
+                              // 👇 FIXED: Bulletproof Text formatting so it never stacks vertically
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -261,6 +263,9 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                                         fontWeight: FontWeight.bold,
                                         fontSize: 15,
                                       ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow
+                                          .ellipsis, // Adds "..." if it gets too long
                                     ),
                                     Text(
                                       "slug: ${cat['slug'] ?? 'none'}",
@@ -268,77 +273,95 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                                         fontSize: 12,
                                         color: Colors.grey,
                                       ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ],
                                 ),
                               ),
 
-                              // Dynamic Product Counter
-                              FutureBuilder<int>(
-                                future: _getProductCount(catName),
-                                builder: (context, countSnapshot) {
-                                  final count = countSnapshot.data ?? 0;
-                                  return Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    margin: const EdgeInsets.only(right: 8),
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Text(
-                                      "$count product${count == 1 ? '' : 's'}",
-                                      style: const TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.grey,
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
+                              const SizedBox(width: 8),
 
-                              if (isProtected)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.amber.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Row(
-                                    children: const [
-                                      Icon(
-                                        Icons.lock,
-                                        size: 12,
-                                        color: Colors.amber,
-                                      ),
-                                      SizedBox(width: 4),
-                                      Text(
-                                        "Protected",
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.amber,
+                              // 👇 FIXED: Changed from Row to Column. They now stack vertically, freeing up tons of space!
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  FutureBuilder<int>(
+                                    future: _getProductCount(catName),
+                                    builder: (context, countSnapshot) {
+                                      final count = countSnapshot.data ?? 0;
+                                      return Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
                                         ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.grey.withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(
+                                            6,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          "$count product${count == 1 ? '' : 's'}",
+                                          style: const TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+
+                                  if (isProtected) ...[
+                                    const SizedBox(
+                                      height: 6,
+                                    ), // Spacing between the badges
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
                                       ),
-                                    ],
-                                  ),
-                                )
-                              else
-                                IconButton(
-                                  icon: const Icon(
-                                    Icons.delete_outline,
-                                    color: Colors.redAccent,
-                                    size: 20,
-                                  ),
-                                  onPressed: () =>
-                                      _deleteCategory(cat['id'], catName),
-                                ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.amber.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: const [
+                                          Icon(
+                                            Icons.lock,
+                                            size: 10,
+                                            color: Colors.amber,
+                                          ),
+                                          SizedBox(width: 4),
+                                          Text(
+                                            "Protected",
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.amber,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ] else ...[
+                                    IconButton(
+                                      padding: const EdgeInsets.only(top: 8),
+                                      constraints: const BoxConstraints(),
+                                      icon: const Icon(
+                                        Icons.delete_outline,
+                                        color: Colors.redAccent,
+                                        size: 20,
+                                      ),
+                                      onPressed: () =>
+                                          _deleteCategory(cat['id'], catName),
+                                    ),
+                                  ],
+                                ],
+                              ),
                             ],
                           );
                         },
@@ -385,8 +408,6 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
               backgroundColor: Colors.red,
             ),
           );
-
-          // 👇 FIXED: This tells Flutter "Hey, the data changed, redraw the list immediately!"
           setState(() {});
         }
       } catch (e) {

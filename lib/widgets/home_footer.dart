@@ -56,7 +56,7 @@ class HomeFooter extends StatelessWidget {
                 ),
               ),
               Text(" with ", style: TextStyle(color: textColor, fontSize: 13)),
-              const Icon(Icons.favorite, color: Color(0xFF92D050), size: 14),
+              const Icon(Icons.favorite, color: Color(0xFF16a34a), size: 14),
               Text(
                 " in Bengaluru, India",
                 style: TextStyle(color: textColor, fontSize: 13),

@@ -16,6 +16,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   String? _userName;
   String? _userMobile;
 
+  // 👇 Tracks the background database check silently
+  bool _isSyncingWithDatabase = true;
+
   @override
   void initState() {
     super.initState();
@@ -24,21 +27,45 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   Future<void> _fetchUserProfile() async {
     final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) return;
+    if (user == null) {
+      if (mounted) setState(() => _isSyncingWithDatabase = false);
+      return;
+    }
+
+    // 1. Try to grab instant local data
+    if (mounted) {
+      setState(() {
+        _userName = user.userMetadata?['name']?.toString();
+        _userMobile = user.userMetadata?['mobile']?.toString();
+      });
+    }
+
+    // 2. Silently fetch from the database in the background
     try {
       final data = await Supabase.instance.client
           .from('profiles')
           .select('name, mobile')
-          .eq('id', user.id)
-          .single();
+          .eq('email', user.email!)
+          .maybeSingle();
 
-      if (mounted) {
+      if (mounted && data != null) {
         setState(() {
-          _userName = data['name'];
-          _userMobile = data['mobile'];
+          if (data['name'] != null && data['name'].toString().isNotEmpty) {
+            _userName = data['name'].toString();
+          }
+          if (data['mobile'] != null && data['mobile'].toString().isNotEmpty) {
+            _userMobile = data['mobile'].toString();
+          }
         });
       }
-    } catch (e) {}
+    } catch (e) {
+      debugPrint("Silent profile sync error: $e");
+    } finally {
+      // 3. Mark the sync as totally finished
+      if (mounted) {
+        setState(() => _isSyncingWithDatabase = false);
+      }
+    }
   }
 
   @override
@@ -51,6 +78,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final textColor = isDark ? Colors.white : Colors.black87;
+
+    // 👇 THE MAGIC LOGIC: Decides exactly what text to show smoothly
+    String displayTitle = "Your account";
+    if (user != null) {
+      if (_userName != null && _userName!.isNotEmpty) {
+        displayTitle = _userName!; // We have the real name!
+      } else if (_isSyncingWithDatabase) {
+        displayTitle =
+            " "; // 👈 It is currently checking the DB. Show a blank, invisible space! No spinners!
+      } else {
+        displayTitle =
+            "GardenRich User"; // DB is finished, and they TRULY have no name.
+      }
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -75,8 +116,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               child: const Icon(Icons.person, size: 50, color: Colors.grey),
             ),
             const SizedBox(height: 16),
+
+            // 👇 Displays our carefully calculated text
             Text(
-              user != null ? (_userName ?? "GardenRich User") : "Your account",
+              displayTitle,
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 24,
@@ -121,12 +164,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 ],
               ),
 
-            if (user == null)
+            if (user == null) ...[
+              const SizedBox(height: 8),
               const Text(
                 "Log in to view your complete profile",
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey, fontSize: 14),
               ),
+            ],
             const SizedBox(height: 30),
 
             if (user == null)
@@ -138,7 +183,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           .push('/login', extra: true)
                           .then((_) => setState(() {})),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1b5e20),
+                        backgroundColor: const Color(0xFF16a34a),
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 15),
                         shape: RoundedRectangleBorder(
@@ -159,8 +204,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           .push('/login', extra: false)
                           .then((_) => setState(() {})),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF1b5e20),
-                        side: const BorderSide(color: Color(0xFF1b5e20)),
+                        foregroundColor: const Color(0xFF16a34a),
+                        side: const BorderSide(color: Color(0xFF16a34a)),
                         padding: const EdgeInsets.symmetric(vertical: 15),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
@@ -270,7 +315,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
             const SizedBox(height: 20),
 
-            // 👇 THE FIXED APPEARANCE ROW
             InkWell(
               onTap: () => _showAppearanceModal(currentThemeMode),
               child: Container(
@@ -297,7 +341,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         color: textColor,
                       ),
                     ),
-                    const Spacer(), // 👈 The magic spring that pushes everything to the right
+                    const Spacer(),
                     Text(
                       themeText,
                       style: const TextStyle(color: Colors.grey, fontSize: 12),
@@ -428,10 +472,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         style: TextStyle(fontWeight: FontWeight.w500, color: textColor),
       ),
       trailing: isSelected
-          ? const Icon(Icons.radio_button_checked, color: Color(0xFF1b5e20))
+          ? const Icon(Icons.radio_button_checked, color: Color(0xFF16a34a))
           : const Icon(Icons.radio_button_unchecked, color: Colors.grey),
       onTap: () {
-        ref.read(themeModeProvider.notifier).state = mode;
+        ref.read(themeModeProvider.notifier).setTheme(mode);
         Navigator.pop(context);
       },
     );

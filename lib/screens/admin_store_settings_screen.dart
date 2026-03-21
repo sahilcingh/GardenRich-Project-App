@@ -102,7 +102,7 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("Settings saved successfully!"),
-            backgroundColor: Color(0xFF92D050),
+            backgroundColor: Color(0xFF16a34a),
           ),
         );
       }
@@ -126,7 +126,7 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(primary: Color(0xFF92D050)),
+            colorScheme: const ColorScheme.light(primary: Color(0xFF16a34a)),
           ),
           child: child!,
         );
@@ -147,7 +147,7 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
       return Scaffold(
         backgroundColor: bgColor,
         body: const Center(
-          child: CircularProgressIndicator(color: Color(0xFF92D050)),
+          child: CircularProgressIndicator(color: Color(0xFF16a34a)),
         ),
       );
     }
@@ -241,7 +241,7 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
               cardColor,
               isDark,
               icon: Icons.local_offer_outlined,
-              iconColor: const Color(0xFF92D050),
+              iconColor: const Color(0xFF16a34a),
               title: "Discount / Coupon",
               subtitle:
                   "Create a discount code customers can apply at checkout",
@@ -324,7 +324,6 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // 👇 FIX: Fixed-height wrapper to perfectly align with the Left text field
                               SizedBox(
                                 height: 34,
                                 child: Align(
@@ -347,8 +346,7 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
                               GestureDetector(
                                 onTap: _pickExpiryDate,
                                 child: Container(
-                                  height:
-                                      52, // Matches the height of TextFields perfectly
+                                  height: 52,
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 12,
                                   ),
@@ -361,23 +359,27 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
+                                    // 👇 FIX: Removed spaceBetween and added Expanded to make this row perfectly responsive!
                                     children: [
-                                      Text(
-                                        _expiryDate == null
-                                            ? "dd-mm-yyyy"
-                                            : DateFormat(
-                                                'dd-MM-yyyy',
-                                              ).format(_expiryDate!),
-                                        style: TextStyle(
-                                          color: _expiryDate == null
-                                              ? Colors.grey
-                                              : (isDark
-                                                    ? Colors.white
-                                                    : Colors.black),
+                                      Expanded(
+                                        child: Text(
+                                          _expiryDate == null
+                                              ? "dd-mm-yyyy"
+                                              : DateFormat(
+                                                  'dd-MM-yyyy',
+                                                ).format(_expiryDate!),
+                                          style: TextStyle(
+                                            color: _expiryDate == null
+                                                ? Colors.grey
+                                                : (isDark
+                                                      ? Colors.white
+                                                      : Colors.black),
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
+                                      const SizedBox(width: 4),
                                       Icon(
                                         Icons.calendar_today,
                                         size: 16,
@@ -420,7 +422,7 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
               child: ElevatedButton(
                 onPressed: _isSaving ? null : _saveSettings,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF92D050),
+                  backgroundColor: const Color(0xFF16a34a),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -524,7 +526,6 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 👇 FIX: Fixed-height wrapper forces all labels to perfectly match
         SizedBox(
           height: 34,
           child: Align(
@@ -536,7 +537,7 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
                 fontWeight: FontWeight.bold,
                 color: Colors.grey,
                 letterSpacing: 1.1,
-                height: 1.2, // Tighter line height for multiline text
+                height: 1.2,
               ),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
@@ -577,7 +578,7 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: Color(0xFF92D050)),
+                borderSide: const BorderSide(color: Color(0xFF16a34a)),
               ),
             ),
           ),
@@ -608,12 +609,12 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
             color: isActive
-                ? const Color(0xFF92D050)
+                ? const Color(0xFF16a34a)
                 : (isDark ? Colors.grey[800] : Colors.grey[50]),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
               color: isActive
-                  ? const Color(0xFF92D050)
+                  ? const Color(0xFF16a34a)
                   : (isDark ? Colors.grey[700]! : Colors.grey.shade200),
             ),
           ),
@@ -628,6 +629,8 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
                       ? Colors.white
                       : (isDark ? Colors.white : Colors.black87),
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
               Text(
                 subtitle,
@@ -635,6 +638,8 @@ class _AdminStoreSettingsScreenState extends State<AdminStoreSettingsScreen> {
                   fontSize: 10,
                   color: isActive ? Colors.white70 : Colors.grey,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),

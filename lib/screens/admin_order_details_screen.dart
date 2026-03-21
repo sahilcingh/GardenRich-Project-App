@@ -107,7 +107,7 @@ class _AdminOrderDetailsScreenState extends State<AdminOrderDetailsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text("Order marked as ${newStatus.toUpperCase()}"),
-            backgroundColor: const Color(0xFF92D050),
+            backgroundColor: const Color(0xFF16a34a),
           ),
         );
       }
@@ -169,7 +169,7 @@ class _AdminOrderDetailsScreenState extends State<AdminOrderDetailsScreen> {
       ),
       body: _isLoading
           ? const Center(
-              child: CircularProgressIndicator(color: Color(0xFF92D050)),
+              child: CircularProgressIndicator(color: Color(0xFF16a34a)),
             )
           : ListView(
               padding: const EdgeInsets.all(16),
@@ -433,10 +433,10 @@ class _AdminOrderDetailsScreenState extends State<AdminOrderDetailsScreen> {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF92D050).withOpacity(0.1),
+                    color: const Color(0xFF16a34a).withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: const Color(0xFF92D050).withOpacity(0.3),
+                      color: const Color(0xFF16a34a).withOpacity(0.3),
                     ),
                   ),
                   child: Row(
@@ -454,7 +454,7 @@ class _AdminOrderDetailsScreenState extends State<AdminOrderDetailsScreen> {
                         "Rs. $total",
                         style: const TextStyle(
                           fontWeight: FontWeight.w900,
-                          color: Color(0xFF92D050),
+                          color: Color(0xFF16a34a),
                           fontSize: 20,
                         ),
                       ),

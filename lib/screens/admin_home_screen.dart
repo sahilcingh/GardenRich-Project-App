@@ -172,10 +172,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         await client.from('products').delete().eq('id', product['id']);
         _fetchData(showSpinner: true);
       } catch (e) {
-        if (mounted)
+        if (mounted) {
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(SnackBar(content: Text("Error: $e")));
+        }
       }
     }
   }
@@ -233,9 +234,18 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         .subscribe();
   }
 
-  void _showNotifications() {
-    setState(() => _unreadCount = 0);
+  void _clearNotifications() {
+    if (_recentOrders.isNotEmpty) {
+      _lastSeenTimeStr = _recentOrders.first['created_at'].toString();
+      _prefs?.setString('admin_last_seen_order_time', _lastSeenTimeStr);
+    }
+    setState(() {
+      _recentOrders.clear();
+      _unreadCount = 0;
+    });
+  }
 
+  void _showNotifications() {
     showGeneralDialog(
       context: context,
       barrierDismissible: true,
@@ -249,14 +259,17 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             ? const Color(0xFF1A2A1A)
             : const Color(0xFFF2FAF2);
 
+        final screenWidth = MediaQuery.of(context).size.width;
+        final screenHeight = MediaQuery.of(context).size.height;
+
         return Align(
           alignment: Alignment.topRight,
           child: Material(
             color: Colors.transparent,
             child: Container(
-              margin: const EdgeInsets.only(top: 60, right: 16),
-              width: 360,
-              constraints: const BoxConstraints(maxHeight: 500),
+              margin: const EdgeInsets.only(top: 60, right: 16, left: 16),
+              width: screenWidth > 400 ? 360 : screenWidth - 32,
+              constraints: BoxConstraints(maxHeight: screenHeight * 0.7),
               decoration: BoxDecoration(
                 color: bgColor,
                 borderRadius: BorderRadius.circular(12),
@@ -271,46 +284,75 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // HEADER
+                  // 👇 FIXED NOTIFICATIONS HEADER: Expanded used to stop overflow
                   Padding(
                     padding: const EdgeInsets.all(16.0),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              "NOTIFICATIONS",
-                              style: TextStyle(
-                                fontWeight: FontWeight.w900,
-                                fontSize: 12,
-                                color: isDark
-                                    ? Colors.grey[400]
-                                    : Colors.grey[800],
-                                letterSpacing: 0.5,
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "NOTIFICATIONS",
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 12,
+                                  color: isDark
+                                      ? Colors.grey[400]
+                                      : Colors.grey[800],
+                                  letterSpacing: 0.5,
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              "New orders will appear here",
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.grey.shade500,
+                              const SizedBox(height: 2),
+                              Text(
+                                "New orders will appear here",
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey.shade500,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_recentOrders.isNotEmpty)
+                              InkWell(
+                                onTap: () {
+                                  Navigator.pop(context);
+                                  _clearNotifications();
+                                },
+                                child: const Padding(
+                                  padding: EdgeInsets.only(right: 16.0),
+                                  child: Text(
+                                    "CLEAR ALL",
+                                    style: TextStyle(
+                                      color: Colors.blueAccent,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            InkWell(
+                              onTap: () => Navigator.pop(context),
+                              child: const Text(
+                                "CLOSE",
+                                style: TextStyle(
+                                  color: Color(0xFFE53935),
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 11,
+                                ),
                               ),
                             ),
                           ],
-                        ),
-                        InkWell(
-                          onTap: () => Navigator.pop(context),
-                          child: const Text(
-                            "CLOSE",
-                            style: TextStyle(
-                              color: Color(0xFFE53935),
-                              fontWeight: FontWeight.bold,
-                              fontSize: 11,
-                            ),
-                          ),
                         ),
                       ],
                     ),
@@ -346,16 +388,13 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                               )?.toInt() ??
                               0;
 
-                          // 👇 NEW: InkWell makes the notification clickable to view order details
                           return InkWell(
                             onTap: () {
-                              Navigator.pop(
-                                context,
-                              ); // Close the notifications dropdown
+                              Navigator.pop(context);
                               context.push(
                                 '/admin-order-details',
                                 extra: order,
-                              ); // Go to order details
+                              );
                             },
                             child: Container(
                               color: itemBgColor,
@@ -371,7 +410,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                                     decoration: BoxDecoration(
                                       color: isDark
                                           ? const Color(
-                                              0xFF1B5E20,
+                                              0xFF16a34a,
                                             ).withOpacity(0.3)
                                           : const Color(0xFFE8F5E9),
                                       shape: BoxShape.circle,
@@ -399,6 +438,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                                             fontSize: 13,
                                             color: textColor,
                                           ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
                                         ),
                                         const SizedBox(height: 2),
                                         Text(
@@ -408,6 +449,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                                             fontSize: 11,
                                             fontWeight: FontWeight.w500,
                                           ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
                                         ),
                                         const SizedBox(height: 4),
                                         Text(
@@ -478,18 +521,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           ),
         );
       },
-    ).then((_) {
-      if (mounted) {
-        setState(() {
-          if (_recentOrders.isNotEmpty) {
-            _lastSeenTimeStr = _recentOrders.first['created_at'].toString();
-            _prefs?.setString('admin_last_seen_order_time', _lastSeenTimeStr);
-          }
-          _recentOrders.clear();
-          _unreadCount = 0;
-        });
-      }
-    });
+    );
   }
 
   @override
@@ -550,7 +582,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           ),
         ),
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF92D050),
+          backgroundColor: const Color(0xFF16a34a),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
@@ -566,27 +598,31 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         title: FittedBox(
           fit: BoxFit.scaleDown,
           alignment: Alignment.centerLeft,
-          child: RichText(
-            text: TextSpan(
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.w900,
-                letterSpacing: -1.2,
-                fontFamily: 'Roboto',
+          // 👇 FIXED LOGO: Replaced RichText with Row to prevent vertical word stacking
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Garden',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -1.2,
+                  fontFamily: 'Roboto',
+                  color: isDark ? Colors.white : const Color(0xFF18181b),
+                ),
               ),
-              children: [
-                TextSpan(
-                  text: 'Garden',
-                  style: TextStyle(
-                    color: isDark ? Colors.white : const Color(0xFF18181b),
-                  ),
+              const Text(
+                'Rich',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -1.2,
+                  fontFamily: 'Roboto',
+                  color: Color(0xFF16a34a),
                 ),
-                const TextSpan(
-                  text: 'Rich',
-                  style: TextStyle(color: Color(0xFF92D050)),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
         actions: [
@@ -616,7 +652,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               ),
             ),
           ),
-
           Theme(
             data: Theme.of(context).copyWith(
               splashColor: Colors.transparent,
@@ -737,15 +772,17 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        "Admin",
-                        style: TextStyle(
-                          color: isDark ? Colors.white : Colors.black87,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
+                      if (screenWidth > 350) ...[
+                        const SizedBox(width: 8),
+                        Text(
+                          "Admin",
+                          style: TextStyle(
+                            color: isDark ? Colors.white : Colors.black87,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
                         ),
-                      ),
+                      ],
                       const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -806,7 +843,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: const BorderSide(
-                    color: Color(0xFF92D050),
+                    color: Color(0xFF16a34a),
                     width: 1,
                   ),
                 ),
@@ -870,7 +907,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 ? const Center(child: CircularProgressIndicator())
                 : RefreshIndicator(
                     onRefresh: () => _fetchData(showSpinner: true),
-                    color: const Color(0xFF92D050),
+                    color: const Color(0xFF16a34a),
                     backgroundColor: isDark ? Colors.grey[800] : Colors.white,
                     child: CustomScrollView(
                       physics: const AlwaysScrollableScrollPhysics(),
@@ -1091,7 +1128,7 @@ class _AdminProductCardState extends State<AdminProductCard> {
                         vertical: 4,
                       ),
                       decoration: const BoxDecoration(
-                        color: Color(0xFF92D050),
+                        color: Color(0xFF16a34a),
                         borderRadius: BorderRadius.only(
                           topLeft: Radius.circular(8),
                         ),
@@ -1239,7 +1276,7 @@ class _AdminProductCardState extends State<AdminProductCard> {
                           fontWeight: FontWeight.w900,
                           color: variants.isEmpty
                               ? Colors.grey
-                              : const Color(0xFF92D050),
+                              : const Color(0xFF16a34a),
                           fontSize: 16,
                         ),
                       ),
@@ -1258,7 +1295,7 @@ class _AdminProductCardState extends State<AdminProductCard> {
                         Text(
                           "Save Rs. ${savings.toInt()}",
                           style: const TextStyle(
-                            color: Color(0xFF92D050),
+                            color: Color(0xFF16a34a),
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
                           ),
@@ -1415,7 +1452,7 @@ class _EditProductDialogState extends State<EditProductDialog> {
                 ListTile(
                   leading: const Icon(
                     Icons.photo_library_outlined,
-                    color: Color(0xFF92D050),
+                    color: Color(0xFF16a34a),
                   ),
                   title: const Text(
                     'Choose from Gallery',
@@ -1426,7 +1463,7 @@ class _EditProductDialogState extends State<EditProductDialog> {
                 ListTile(
                   leading: const Icon(
                     Icons.camera_alt_outlined,
-                    color: Color(0xFF92D050),
+                    color: Color(0xFF16a34a),
                   ),
                   title: const Text(
                     'Take a Photo',

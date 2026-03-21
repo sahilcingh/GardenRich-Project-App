@@ -38,7 +38,7 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
         itemsResponse,
       );
 
-      // 2. Fetch the images for these items using the Product NAME (Your bulletproof method)
+      // 2. Fetch the images for these items using the Product NAME
       for (var i = 0; i < itemsList.length; i++) {
         try {
           final productName =
@@ -67,7 +67,7 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
               .from('addresses')
               .select()
               .eq('id', addressId)
-              .maybeSingle(); // Made safe so it doesn't crash if address is deleted
+              .maybeSingle();
           _addressData = addressResponse;
         } catch (e) {
           debugPrint("Could not fetch address details: $e");
@@ -102,11 +102,18 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
     }
   }
 
-  // Format date helper
+  // 👇 THE FIX: Updated to handle UTC to Local Time perfectly
   String _formatDate(String? isoDate) {
     if (isoDate == null) return "Unknown Date";
     try {
-      final date = DateTime.parse(isoDate).toLocal();
+      String safeDate = isoDate;
+      // Force it to be treated as UTC if Supabase didn't append the timezone
+      if (!safeDate.endsWith('Z') && !safeDate.contains('+')) {
+        safeDate += 'Z';
+      }
+
+      final date = DateTime.parse(safeDate).toLocal();
+
       final months = [
         'Jan',
         'Feb',
@@ -150,7 +157,6 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
     final totalRaw = widget.order['total'] ?? widget.order['total_amount'] ?? 0;
     final double totalAmount = double.tryParse(totalRaw.toString()) ?? 0.0;
 
-    // Added safety null-checks here so it never crashes on missing address data
     final String address = _addressData != null
         ? "${_addressData!['address'] ?? ''}, ${_addressData!['city'] ?? ''}, ${_addressData!['pin_code'] ?? ''}"
         : "Loading address...";
@@ -325,6 +331,11 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                                 0;
                             final totalItemPrice = price * qty;
 
+                            final String variant =
+                                itemMap['variant_weight']?.toString() ??
+                                itemMap['weight']?.toString() ??
+                                '';
+
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 16.0),
                               child: Row(
@@ -378,6 +389,20 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                                             color: textColor,
                                           ),
                                         ),
+
+                                        if (variant.isNotEmpty &&
+                                            variant != 'null') ...[
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            variant,
+                                            style: TextStyle(
+                                              color: mutedColor,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ],
+
                                         const SizedBox(height: 4),
                                         Text(
                                           "Qty: $qty",

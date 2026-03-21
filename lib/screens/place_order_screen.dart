@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
-
-// 👇 IMPORT FOR EMAIL SERVICE
 import '../services/email_service.dart';
 
 class PlaceOrderScreen extends StatefulWidget {
@@ -20,6 +18,9 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
   Map<String, dynamic>? _selectedAddress;
   bool _isProcessing = false;
 
+  double _freeShippingThreshold = 500.0;
+  double _shippingCharge = 40.0;
+
   late final TextEditingController _emailController = TextEditingController(
     text: Supabase.instance.client.auth.currentUser?.email ?? '',
   );
@@ -29,6 +30,39 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
   void initState() {
     super.initState();
     _addressesFuture = _fetchAddresses();
+    _fetchStoreSettings();
+  }
+
+  // 👇 FIXED: Now correctly reads from your Key-Value 'settings' table
+  Future<void> _fetchStoreSettings() async {
+    try {
+      final response = await Supabase.instance.client
+          .from('settings')
+          .select('key, value');
+
+      if (response.isNotEmpty && mounted) {
+        double freeShipping = 500.0;
+        double shipping = 40.0;
+
+        for (var row in response) {
+          final key = row['key']?.toString();
+          final val = row['value']?.toString() ?? '0';
+
+          if (key == 'free_shipping_above') {
+            freeShipping = double.tryParse(val) ?? 500.0;
+          } else if (key == 'shipping_cost') {
+            shipping = double.tryParse(val) ?? 40.0;
+          }
+        }
+
+        setState(() {
+          _freeShippingThreshold = freeShipping;
+          _shippingCharge = shipping;
+        });
+      }
+    } catch (e) {
+      debugPrint("Using default shipping settings.");
+    }
   }
 
   @override
@@ -38,7 +72,6 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
     super.dispose();
   }
 
-  // --- CALCULATION HELPERS ---
   double get _subtotalAmount {
     double total = 0;
     for (var item in widget.items) {
@@ -48,7 +81,8 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
     return total;
   }
 
-  double get _shippingFee => 40.0;
+  double get _shippingFee =>
+      _subtotalAmount >= _freeShippingThreshold ? 0.0 : _shippingCharge;
 
   int get _totalItems {
     int total = 0;
@@ -61,26 +95,21 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
   Future<List<Map<String, dynamic>>> _fetchAddresses() async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return [];
-
     final response = await Supabase.instance.client
         .from('addresses')
         .select()
         .eq('user_id', user.id)
         .order('created_at', ascending: false);
-
     final addresses = List<Map<String, dynamic>>.from(response);
-
     if (addresses.isNotEmpty) {
       _selectedAddress = addresses.first;
       _phoneController.text = _selectedAddress!['phone']?.toString() ?? '';
     }
-
     return addresses;
   }
 
   void _showErrorPopup(String title, String message) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
     showDialog(
       context: context,
       builder: (context) {
@@ -113,7 +142,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
               child: const Text(
                 "OK",
                 style: TextStyle(
-                  color: Color(0xFF92D050),
+                  color: Color(0xFF16a34a),
                   fontWeight: FontWeight.bold,
                   fontSize: 16,
                 ),
@@ -126,7 +155,6 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
   }
 
   void _showConfirmationDialog() {
-    // 1. We check if all fields are filled BEFORE showing the popup
     final email = _emailController.text.trim();
     final rawPhone = _phoneController.text.trim();
     final cleanPhone = rawPhone.replaceAll(RegExp(r'\D'), '');
@@ -135,15 +163,11 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
         rawPhone.isEmpty ||
         cleanPhone.length != 10 ||
         _selectedAddress == null) {
-      // If data is missing, we just trigger the normal order function
-      // so it can show your existing error popups!
       _placeOrderNow();
       return;
     }
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    // 2. Show the beautiful confirmation dialog
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -151,7 +175,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
-            const Icon(Icons.shopping_bag_outlined, color: Color(0xFF92D050)),
+            const Icon(Icons.shopping_bag_outlined, color: Color(0xFF16a34a)),
             const SizedBox(width: 10),
             Text(
               "Confirm Order",
@@ -172,8 +196,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () =>
-                Navigator.pop(ctx), // Closes the dialog, does nothing
+            onPressed: () => Navigator.pop(ctx),
             child: Text(
               "Cancel",
               style: TextStyle(
@@ -184,11 +207,11 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
           ),
           ElevatedButton(
             onPressed: () {
-              Navigator.pop(ctx); // Closes the dialog
-              _placeOrderNow(); // 👇 ACTUALLY PLACES THE ORDER!
+              Navigator.pop(ctx);
+              _placeOrderNow();
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF92D050),
+              backgroundColor: const Color(0xFF16a34a),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
@@ -209,8 +232,6 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
   Future<void> _placeOrderNow() async {
     final email = _emailController.text.trim();
     final rawPhone = _phoneController.text.trim();
-
-    // Clean the phone number (removes any spaces, dashes, or brackets the user might type)
     final cleanPhone = rawPhone.replaceAll(RegExp(r'\D'), '');
 
     if (email.isEmpty || rawPhone.isEmpty) {
@@ -220,8 +241,6 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
       );
       return;
     }
-
-    // 10-Digit Phone Number Validation
     if (cleanPhone.length != 10) {
       _showErrorPopup(
         "Invalid Phone Number",
@@ -229,7 +248,6 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
       );
       return;
     }
-
     if (_selectedAddress == null) {
       _showErrorPopup(
         "Missing Address",
@@ -253,7 +271,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
         'user_id': user.id,
         'address_id': addressId,
         'email': email,
-        'phone': cleanPhone, // Save the cleanly formatted 10-digit number
+        'phone': cleanPhone,
         'status': 'pending',
         'total': widget.total,
       };
@@ -263,7 +281,6 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
           .insert(orderData)
           .select()
           .single();
-
       final newOrderId = orderResponse['id'];
 
       final List<Map<String, dynamic>> orderItems = widget.items.map((item) {
@@ -273,9 +290,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
           'price': item['price'],
           'quantity': item['qty'],
           'product_image': item['image'],
-          'variant_weight':
-              item['weight'] ??
-              item['variant_weight'], // Ensure weight is tracked
+          'variant_weight': item['weight'] ?? item['variant_weight'],
         };
       }).toList();
 
@@ -283,32 +298,23 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
         await Supabase.instance.client.from('order_items').insert(orderItems);
       } catch (itemError) {
         debugPrint("❌ ORDER ITEMS INSERT FAILED: $itemError");
-        debugPrint("❌ Items attempted: $orderItems");
       }
 
-      // 3. Direct Stock Deduction (No SQL/RPC needed!)
       for (var item in widget.items) {
         final variantId = item['variant_id'];
         final qtyOrdered = item['qty'] as int;
 
         if (variantId != null) {
           try {
-            // A. Fetch the current stock from the database
             final variantData = await Supabase.instance.client
                 .from('product_variants')
                 .select('stock')
                 .eq('id', variantId)
                 .single();
-
-            // B. Calculate the new stock
             int currentStock =
                 int.tryParse(variantData['stock']?.toString() ?? '0') ?? 0;
             int newStock = currentStock - qtyOrdered;
-
-            // Prevent stock from going into negative numbers
             if (newStock < 0) newStock = 0;
-
-            // C. Update the database directly
             await Supabase.instance.client
                 .from('product_variants')
                 .update({'stock': newStock})
@@ -319,7 +325,6 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
         }
       }
 
-      // 👇 4. FIRE THE AUTOMATED EMAIL (to Customer AND Admin)!
       try {
         final firstName = _selectedAddress!['first_name'] ?? '';
         final lastName = _selectedAddress!['last_name'] == 'EMPTY'
@@ -328,8 +333,6 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
         final custName = '$firstName $lastName'.trim().isEmpty
             ? 'Customer'
             : '$firstName $lastName'.trim();
-
-        // Grab the full address string for the Admin email
         final fullAddress =
             "${_selectedAddress!['address']}, ${_selectedAddress!['city']}, ${_selectedAddress!['pin_code']}";
 
@@ -339,22 +342,18 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
           orderId: newOrderId.toString(),
           cartItems: widget.items,
           totalAmount: widget.total.toInt(),
-          customerPhone: cleanPhone, // 👈 Passed to Admin
-          customerAddress: fullAddress, // 👈 Passed to Admin
+          customerPhone: cleanPhone,
+          customerAddress: fullAddress,
         );
-      } catch (emailError) {
-        // If the email fails, we catch the error silently so the user still sees the Success Screen!
-        debugPrint("Failed to send order email: $emailError");
-      }
+      } catch (emailError) {}
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("🎉 Order Placed Successfully!"),
-            backgroundColor: Color(0xFF92D050),
+            backgroundColor: Color(0xFF16a34a),
           ),
         );
-
         context.pop(true);
       }
     } catch (e) {
@@ -453,14 +452,11 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
             ),
           ),
           const SizedBox(height: 20),
-
           ...widget.items.map((item) {
             final itemPrice = (item['price'] as num?)?.toInt() ?? 0;
-
             final String imageUrl = item['image']?.toString() ?? "";
             final bool hasValidImage =
                 imageUrl.isNotEmpty && imageUrl.startsWith('http');
-
             return Padding(
               padding: const EdgeInsets.only(bottom: 16.0),
               child: Row(
@@ -539,9 +535,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
               ),
             );
           }),
-
           const Divider(height: 30),
-
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -553,87 +547,22 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
             ],
           ),
           const SizedBox(height: 16),
-
-          Row(
-            children: [
-              Expanded(
-                child: SizedBox(
-                  height: 40,
-                  child: TextField(
-                    style: TextStyle(fontSize: 14, color: textColor),
-                    decoration: InputDecoration(
-                      hintText: "PROMO CODE",
-                      hintStyle: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[400],
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                      ),
-                      filled: true,
-                      fillColor: isDark ? Colors.grey[800] : Colors.grey[50],
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(
-                          color: isDark
-                              ? Colors.grey[700]!
-                              : Colors.grey.shade300,
-                        ),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(
-                          color: isDark
-                              ? Colors.grey[700]!
-                              : Colors.grey.shade300,
-                        ),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(
-                          color: Colors.black,
-                          width: 1.5,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              SizedBox(
-                height: 40,
-                child: ElevatedButton(
-                  onPressed: () {},
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: isDark ? Colors.grey[800] : Colors.black,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: const Text(
-                    "Apply",
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text("Shipping", style: TextStyle(color: Colors.grey[600])),
               Text(
-                "Rs. ${_shippingFee.toInt()}",
-                style: TextStyle(color: textColor, fontWeight: FontWeight.w500),
+                _shippingFee == 0 ? "FREE" : "Rs. ${_shippingFee.toInt()}",
+                style: TextStyle(
+                  color: _shippingFee == 0
+                      ? const Color(0xFF16a34a)
+                      : textColor,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ],
           ),
           const SizedBox(height: 8),
-
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -644,9 +573,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
               ),
             ],
           ),
-
           const Divider(height: 30),
-
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -663,7 +590,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                 style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w900,
-                  color: Color(0xFF92D050),
+                  color: Color(0xFF16a34a),
                 ),
               ),
             ],
@@ -743,7 +670,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
                               borderSide: const BorderSide(
-                                color: Color(0xFF92D050),
+                                color: Color(0xFF16a34a),
                               ),
                             ),
                           ),
@@ -781,7 +708,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
                               borderSide: const BorderSide(
-                                color: Color(0xFF92D050),
+                                color: Color(0xFF16a34a),
                               ),
                             ),
                           ),
@@ -790,7 +717,6 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                     ],
                   ),
                 ),
-
                 _buildStepCard(
                   step: "2",
                   title: "Shipping Address",
@@ -804,7 +730,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                       });
                     }),
                     style: TextButton.styleFrom(
-                      foregroundColor: const Color(0xFF92D050),
+                      foregroundColor: const Color(0xFF16a34a),
                       textStyle: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     child: const Text("+ Add New Address"),
@@ -812,22 +738,16 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                   child: FutureBuilder<List<Map<String, dynamic>>>(
                     future: _addressesFuture,
                     builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
+                      if (snapshot.connectionState == ConnectionState.waiting)
                         return const Center(child: CircularProgressIndicator());
-                      }
-                      if (snapshot.hasError) {
+                      if (snapshot.hasError)
                         return const Text("Failed to load addresses.");
-                      }
-
                       final addresses = snapshot.data ?? [];
-
-                      if (addresses.isEmpty) {
+                      if (addresses.isEmpty)
                         return const Padding(
                           padding: EdgeInsets.symmetric(vertical: 10.0),
                           child: Text("No addresses found. Please add one."),
                         );
-                      }
-
                       return ListView.builder(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
@@ -842,7 +762,6 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                               ? ''
                               : (addr['last_name'] ?? '');
                           final fullName = '$firstName $lastName'.trim();
-
                           return GestureDetector(
                             onTap: () {
                               setState(() {
@@ -856,12 +775,12 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                               padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(
                                 color: isSelected
-                                    ? const Color(0xFF92D050).withOpacity(0.05)
+                                    ? const Color(0xFF16a34a).withOpacity(0.05)
                                     : Colors.transparent,
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
                                   color: isSelected
-                                      ? const Color(0xFF92D050)
+                                      ? const Color(0xFF16a34a)
                                       : Colors.grey.shade300,
                                   width: isSelected ? 2 : 1,
                                 ),
@@ -874,7 +793,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                                         ? Icons.radio_button_checked
                                         : Icons.radio_button_unchecked,
                                     color: isSelected
-                                        ? const Color(0xFF92D050)
+                                        ? const Color(0xFF16a34a)
                                         : Colors.grey,
                                   ),
                                   const SizedBox(width: 12),
@@ -920,7 +839,6 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                     },
                   ),
                 ),
-
                 _buildStepCard(
                   step: "3",
                   title: "Payment Method",
@@ -968,10 +886,10 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF92D050).withOpacity(0.05),
+                          color: const Color(0xFF16a34a).withOpacity(0.05),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: const Color(0xFF92D050),
+                            color: const Color(0xFF16a34a),
                             width: 2,
                           ),
                         ),
@@ -979,7 +897,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                           children: [
                             const Icon(
                               Icons.radio_button_checked,
-                              color: Color(0xFF92D050),
+                              color: Color.fromARGB(255, 43, 145, 50),
                             ),
                             const SizedBox(width: 12),
                             Column(
@@ -1007,12 +925,10 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                     ],
                   ),
                 ),
-
                 _buildOrderReviewCard(isDark, cardColor, textColor),
               ],
             ),
           ),
-
           Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
@@ -1035,7 +951,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                 child: ElevatedButton(
                   onPressed: _isProcessing ? null : _showConfirmationDialog,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1b5e20),
+                    backgroundColor: const Color(0xFF16a34a),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),

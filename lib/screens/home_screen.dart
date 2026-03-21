@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../widgets/product_card.dart';
 import '../widgets/home_footer.dart';
+import '../widgets/cart_threshold_banner.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -40,12 +41,9 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  // 👇 FIXED: Simplified silent refresh
   void _silentRefresh() {
     _fetchCategories();
     setState(() {
-      // We just trigger a new fetch. The FutureBuilder will keep showing
-      // the old data until this new fetch completes!
       _productsFuture = _fetchProducts();
     });
   }
@@ -110,7 +108,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Container(
               padding: const EdgeInsets.all(4),
               decoration: const BoxDecoration(
-                color: Color(0xFF92D050),
+                color: Color(0xFF16a34a),
                 shape: BoxShape.circle,
               ),
               constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
@@ -171,6 +169,13 @@ class _HomeScreenState extends State<HomeScreen> {
         (screenWidth - totalHorizontalPadding) / crossAxisCount;
     final double dynamicExtent = cardWidth + (175.0 * textScale) + 10.0;
 
+    // 👇 FIXED: Safely calculates the cart total without throwing Null errors!
+    double currentCartTotal = 0.0;
+    for (var item in _cartItems) {
+      final int qty = item['qty'] as int? ?? 1;
+      currentCartTotal += ((item['price'] as num?)?.toDouble() ?? 0) * qty;
+    }
+
     return Scaffold(
       backgroundColor: isDark
           ? const Color(0xFF121212)
@@ -178,87 +183,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: _cartItems.isNotEmpty
-          ? Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: InkWell(
-                onTap: _navigateToCart,
-                child: Container(
-                  width: double.infinity,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF92D050),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
-                        blurRadius: 8,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child:
-                              _cartItems.first['image'] != null &&
-                                  _cartItems.first['image']
-                                      .toString()
-                                      .isNotEmpty
-                              ? Image.network(
-                                  _cartItems.first['image'],
-                                  width: 40,
-                                  height: 40,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (c, e, s) =>
-                                      _buildPlaceholderIcon(),
-                                )
-                              : _buildPlaceholderIcon(),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              "View cart",
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            Text(
-                              "${_cartItems.length} item${_cartItems.length > 1 ? 's' : ''}",
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(0.8),
-                                fontSize: 12,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 16.0),
-                        child: Icon(
-                          Icons.arrow_forward_ios_rounded,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+          ? CartThresholdBanner(
+              cartTotal: currentCartTotal,
+              onViewCart: _navigateToCart,
             )
           : null,
 
@@ -288,7 +215,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const TextSpan(
                   text: 'Rich',
-                  style: TextStyle(color: Color(0xFF92D050)),
+                  style: TextStyle(color: Color(0xFF16a34a)),
                 ),
               ],
             ),
@@ -324,7 +251,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
 
       body: RefreshIndicator(
-        color: const Color(0xFF92D050),
+        color: const Color(0xFF16a34a),
         backgroundColor: isDark ? Colors.grey[800] : Colors.white,
         onRefresh: () async {
           setState(() {
@@ -364,7 +291,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                     borderSide: const BorderSide(
-                      color: Color(0xFF92D050),
+                      color: Color(0xFF16a34a),
                       width: 1,
                     ),
                   ),
@@ -434,12 +361,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     return const Center(child: Text("Error fetching data"));
                   }
 
-                  // 👇 FIXED: Only show spinner if waiting AND there is NO old data to show
                   if (snapshot.connectionState == ConnectionState.waiting &&
                       !snapshot.hasData) {
                     return const Center(
                       child: CircularProgressIndicator(
-                        color: Color(0xFF92D050),
+                        color: Color(0xFF16a34a),
                       ),
                     );
                   }
@@ -553,15 +479,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildPlaceholderIcon() {
-    return Container(
-      width: 40,
-      height: 40,
-      color: Colors.white.withOpacity(0.2),
-      child: const Icon(Icons.shopping_bag, color: Colors.white),
     );
   }
 }

@@ -21,80 +21,6 @@ class ProductCard extends StatefulWidget {
 class _ProductCardState extends State<ProductCard> {
   dynamic _selectedVariantId;
 
-  // =================================================================
-  // 🌟 NEW: The sleek Top Notification Animation
-  // =================================================================
-  void _showTopNotification(BuildContext context, String message) {
-    final overlay = Overlay.of(context);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    late OverlayEntry overlayEntry;
-
-    overlayEntry = OverlayEntry(
-      builder: (context) => Positioned(
-        top: MediaQuery.of(context).padding.top + 10,
-        left: 20,
-        right: 20,
-        child: Material(
-          color: Colors.transparent,
-          child: TweenAnimationBuilder<double>(
-            tween: Tween(begin: -50.0, end: 0.0),
-            duration: const Duration(milliseconds: 400),
-            curve: Curves.easeOutCubic,
-            builder: (context, value, child) {
-              return Transform.translate(
-                offset: Offset(0, value),
-                child: child,
-              );
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                color: isDark ? Colors.grey[850] : Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.15),
-                    blurRadius: 15,
-                    offset: const Offset(0, 5),
-                  ),
-                ],
-                border: Border.all(
-                  color: const Color(0xFF92D050).withOpacity(0.5),
-                ),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.check_circle, color: Color(0xFF92D050)),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      message,
-                      style: TextStyle(
-                        color: isDark ? Colors.white : Colors.black87,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-
-    overlay.insert(overlayEntry);
-
-    Future.delayed(const Duration(seconds: 2), () {
-      if (overlayEntry.mounted) {
-        overlayEntry.remove();
-      }
-    });
-  }
-  // =================================================================
-
   void _showStockLimitPopup(
     BuildContext context,
     int limit,
@@ -290,20 +216,14 @@ class _ProductCardState extends State<ProductCard> {
         if (Supabase.instance.client.auth.currentUser != null) {
           widget.cartItems.add(cartItem);
           widget.onCartChanged();
-          if (mounted) {
-            // 👇 UPDATED: Uses top notification
-            _showTopNotification(context, "$itemName added!");
-          }
         }
       }
       return;
     }
 
+    // Instantly add to cart without popups
     widget.cartItems.add(cartItem);
     widget.onCartChanged();
-
-    // 👇 UPDATED: Uses top notification instead of ScaffoldMessenger
-    _showTopNotification(context, "$itemName added!");
   }
 
   @override

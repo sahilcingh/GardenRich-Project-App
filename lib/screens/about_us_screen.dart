@@ -33,13 +33,13 @@ class AboutUsScreen extends StatelessWidget {
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: const Color(0xFF92D050).withOpacity(0.1),
+                color: const Color(0xFF16a34a).withOpacity(0.1),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
                 Icons.eco, // Using a leaf/eco icon for GardenRich
                 size: 40,
-                color: Color(0xFF92D050),
+                color: Color(0xFF16a34a),
               ),
             ),
             const SizedBox(height: 20),
@@ -58,7 +58,7 @@ class AboutUsScreen extends StatelessWidget {
                   ),
                   const TextSpan(
                     text: 'Rich',
-                    style: TextStyle(color: Color(0xFF92D050)),
+                    style: TextStyle(color: Color(0xFF16a34a)),
                   ),
                 ],
               ),
@@ -102,7 +102,7 @@ class AboutUsScreen extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.rocket_launch, color: Color(0xFF92D050)),
+                      const Icon(Icons.rocket_launch, color: Color(0xFF16a34a)),
                       const SizedBox(width: 12),
                       Text(
                         "Our Mission",
@@ -189,10 +189,10 @@ class AboutUsScreen extends StatelessWidget {
       leading: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: const Color(0xFF92D050).withOpacity(0.1),
+          color: const Color(0xFF16a34a).withOpacity(0.1),
           shape: BoxShape.circle,
         ),
-        child: Icon(icon, color: const Color(0xFF92D050), size: 20),
+        child: Icon(icon, color: const Color(0xFF16a34a), size: 20),
       ),
       title: Text(
         title,

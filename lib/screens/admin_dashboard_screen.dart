@@ -104,7 +104,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ListTile(
                   leading: const Icon(
                     Icons.photo_library_outlined,
-                    color: Color(0xFF92D050),
+                    color: Color(0xFF16a34a),
                   ),
                   title: const Text(
                     'Choose from Gallery',
@@ -115,7 +115,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ListTile(
                   leading: const Icon(
                     Icons.camera_alt_outlined,
-                    color: Color(0xFF92D050),
+                    color: Color(0xFF16a34a),
                   ),
                   title: const Text(
                     'Take a Photo',
@@ -230,7 +230,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("Product listed successfully!"),
-            backgroundColor: Color(0xFF92D050),
+            backgroundColor: Color(0xFF16a34a),
           ),
         );
         context.go('/admin-home');
@@ -253,30 +253,38 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final cardColor = isDark ? Colors.grey[900]! : Colors.white;
     final textColor = isDark ? Colors.white : const Color(0xFF18181b);
 
+    // 👇 Grab screen width to make dynamic layout decisions
+    final screenWidth = MediaQuery.of(context).size.width;
+
     return Scaffold(
       backgroundColor: bgColor,
       appBar: AppBar(
         backgroundColor: cardColor,
         elevation: 1,
         shadowColor: Colors.black.withOpacity(0.05),
-        title: RichText(
-          text: TextSpan(
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -1.0,
-              fontFamily: 'Roboto',
+        title: FittedBox(
+          // 👇 FIXED: Prevents title from wrapping onto two lines
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: RichText(
+            text: TextSpan(
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -1.0,
+                fontFamily: 'Roboto',
+              ),
+              children: [
+                TextSpan(
+                  text: 'Garden',
+                  style: TextStyle(color: textColor),
+                ),
+                const TextSpan(
+                  text: 'Rich',
+                  style: TextStyle(color: Color(0xFF16a34a)),
+                ),
+              ],
             ),
-            children: [
-              TextSpan(
-                text: 'Garden',
-                style: TextStyle(color: textColor),
-              ),
-              const TextSpan(
-                text: 'Rich',
-                style: TextStyle(color: Color(0xFF92D050)),
-              ),
-            ],
           ),
         ),
         actions: [
@@ -293,10 +301,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ),
               onSelected: (value) async {
                 if (value == 'dashboard') {
-                  // 👇 This safely teleports you away from the form and back to the Grid
                   context.go('/admin-home');
                 } else if (value == 'orders') {
-                  context.push('/admin-orders'); // Route to Manage Orders
+                  context.push('/admin-orders');
                 } else if (value == 'logout') {
                   await Supabase.instance.client.auth.signOut();
                   if (context.mounted) context.go('/login');
@@ -386,15 +393,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        "Admin",
-                        style: TextStyle(
-                          color: textColor,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
+                      // 👇 FIXED: Hides "Admin" text on small screens to save space
+                      if (screenWidth > 400) ...[
+                        const SizedBox(width: 8),
+                        Text(
+                          "Admin",
+                          style: TextStyle(
+                            color: textColor,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
                         ),
-                      ),
+                      ],
                       const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -427,7 +437,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ],
       ),
 
-      // Mobile Only Drawer (Passes isDrawer: true)
+      // Mobile Only Drawer
       drawer: Drawer(
         backgroundColor: cardColor,
         child: SafeArea(
@@ -575,7 +585,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               style: TextStyle(color: textColor, fontWeight: FontWeight.w500),
             ),
             onTap: () {
-              // 👇 FIXED: Uses the boolean isDrawer flag instead of Scaffold context lookup
               if (isDrawer) {
                 Navigator.pop(context);
               }
@@ -771,13 +780,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   onPressed: _addVariantRow,
                   icon: const Icon(
                     Icons.add,
-                    color: Color(0xFF92D050),
+                    color: Color(0xFF16a34a),
                     size: 18,
                   ),
                   label: const Text(
                     "Add Another Size",
                     style: TextStyle(
-                      color: Color(0xFF92D050),
+                      color: Color(0xFF16a34a),
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -826,7 +835,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               : "No file chosen",
                           style: TextStyle(
                             color: _imageFile != null
-                                ? const Color(0xFF92D050)
+                                ? const Color(0xFF16a34a)
                                 : Colors.grey[600],
                             fontSize: 14,
                             fontWeight: _imageFile != null
@@ -853,7 +862,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     value: _isFeatured,
                     onChanged: (val) =>
                         setState(() => _isFeatured = val ?? false),
-                    activeColor: const Color(0xFF92D050),
+                    activeColor: const Color(0xFF16a34a),
                     title: Text(
                       "Mark as Featured / Best Seller",
                       style: TextStyle(
@@ -891,7 +900,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     ),
                     child: _isLoading
                         ? const CircularProgressIndicator(
-                            color: Color(0xFF92D050),
+                            color: Color(0xFF16a34a),
                           )
                         : const Text(
                             "List Product",
@@ -958,7 +967,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFF92D050), width: 2),
+          borderSide: const BorderSide(color: Color(0xFF16a34a), width: 2),
         ),
       ),
     );
@@ -982,7 +991,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  // Replace your existing _buildGridTextField with this:
   Widget _buildGridTextField(
     TextEditingController controller,
     String hint,
@@ -990,10 +998,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     bool isDark, {
     bool isNumber = false,
   }) {
-    // 👇 If the hint is "g" (meaning it's the Unit column), show a Dropdown!
     if (hint == "g") {
       final units = ['g', 'kg', 'ml', 'L', 'pc', 'bunch', 'dozen'];
-      // Ensure the controller's current text is valid, otherwise default to 'g'
       if (!units.contains(controller.text)) controller.text = 'g';
 
       return Container(
@@ -1027,7 +1033,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFF92D050)),
+              borderSide: const BorderSide(color: Color(0xFF16a34a)),
             ),
           ),
           items: units.map((String u) {
@@ -1043,7 +1049,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       );
     }
 
-    // Otherwise, render the normal text field
     return Container(
       width: width,
       padding: const EdgeInsets.only(right: 8.0),
@@ -1075,7 +1080,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFF92D050)),
+            borderSide: const BorderSide(color: Color(0xFF16a34a)),
           ),
         ),
       ),

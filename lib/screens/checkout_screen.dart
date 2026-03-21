@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
 
 class CheckoutScreen extends StatefulWidget {
@@ -12,8 +13,59 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   List<Map<String, dynamic>> _cartItems = [];
   bool _isInitialized = false;
 
-  // 👇 The threshold for free shipping!
-  final double _freeShippingThreshold = 500.0;
+  // 👇 NEW: We start by assuming settings are loading to prevent "ninja clicks"
+  bool _isLoadingSettings = true;
+
+  // Store Settings (Dynamically fetched!)
+  double _freeShippingThreshold = 500.0;
+  double _minOrderValue = 0.0;
+  double _shippingCharge = 40.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchStoreSettings();
+  }
+
+  Future<void> _fetchStoreSettings() async {
+    try {
+      final response = await Supabase.instance.client
+          .from('settings')
+          .select('key, value');
+
+      if (response.isNotEmpty && mounted) {
+        double minOrder = 0.0;
+        double freeShipping = 500.0;
+        double shipping = 40.0;
+
+        for (var row in response) {
+          final key = row['key']?.toString();
+          final val = row['value']?.toString() ?? '0';
+
+          if (key == 'minimum_order_value') {
+            minOrder = double.tryParse(val) ?? 0.0;
+          } else if (key == 'free_shipping_above') {
+            freeShipping = double.tryParse(val) ?? 500.0;
+          } else if (key == 'shipping_cost') {
+            shipping = double.tryParse(val) ?? 40.0;
+          }
+        }
+
+        setState(() {
+          _minOrderValue = minOrder;
+          _freeShippingThreshold = freeShipping;
+          _shippingCharge = shipping;
+        });
+      }
+    } catch (e) {
+      debugPrint("❌ DB error fetching store settings: $e");
+    } finally {
+      // 👇 NEW: Once the database replies (success or fail), we unlock the UI!
+      if (mounted) {
+        setState(() => _isLoadingSettings = false);
+      }
+    }
+  }
 
   @override
   void didChangeDependencies() {
@@ -53,7 +105,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       pageBuilder: (context, anim1, anim2) => const SizedBox(),
       transitionBuilder: (context, anim1, anim2, child) {
         final isDark = Theme.of(context).brightness == Brightness.dark;
-
         final curvedAnimation = CurvedAnimation(
           parent: anim1,
           curve: Curves.easeOutBack,
@@ -136,7 +187,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       child: ElevatedButton(
                         onPressed: () => Navigator.pop(context),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF92D050),
+                          backgroundColor: const Color(0xFF16a34a),
                           foregroundColor: Colors.black,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           elevation: 0,
@@ -185,9 +236,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return total;
   }
 
-  // 👇 Shipping is FREE if over threshold!
   double get _shippingFee =>
-      _subtotalAmount >= _freeShippingThreshold ? 0.0 : 40.0;
+      _subtotalAmount >= _freeShippingThreshold ? 0.0 : _shippingCharge;
 
   double get _totalAmount {
     if (_cartItems.isEmpty) return 0.0;
@@ -208,14 +258,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final bgColor = isDark ? const Color(0xFF121212) : const Color(0xFFF9FAFB);
     final cardColor = isDark ? const Color(0xFF1C1C1E) : Colors.white;
     final textColor = isDark ? Colors.white : Colors.black87;
-    const greenColor = Color(0xFF92D050);
+    const greenColor = Color(0xFF16a34a);
 
-    // Free Shipping Progress Calculation
     double progress = (_subtotalAmount / _freeShippingThreshold).clamp(
       0.0,
       1.0,
     );
     double remaining = _freeShippingThreshold - _subtotalAmount;
+
+    // 👇 NEW: We calculate if it's below min order, and create a master "locked" status
+    final bool isBelowMinOrder = _subtotalAmount < _minOrderValue;
+    final bool isButtonLocked = _isLoadingSettings || isBelowMinOrder;
 
     // ignore: deprecated_member_use
     return WillPopScope(
@@ -269,7 +322,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     child: ListView(
                       padding: const EdgeInsets.all(16.0),
                       children: [
-                        // --- TITLE ---
                         RichText(
                           text: TextSpan(
                             style: TextStyle(
@@ -292,7 +344,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         ),
                         const SizedBox(height: 24),
 
-                        // --- FREE SHIPPING PROGRESS BAR ---
                         Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
@@ -375,7 +426,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         ),
                         const SizedBox(height: 24),
 
-                        // --- CART ITEMS ---
                         ..._cartItems.map((item) {
                           int index = _cartItems.indexOf(item);
                           final itemPrice =
@@ -429,7 +479,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
-                                // Item Image
                                 ClipRRect(
                                   borderRadius: BorderRadius.circular(8),
                                   child: Container(
@@ -454,8 +503,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   ),
                                 ),
                                 const SizedBox(width: 16),
-
-                                // Item Details
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment:
@@ -480,8 +527,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                         ),
                                       ),
                                       const SizedBox(height: 6),
-
-                                      // Price Row (Uses Wrap to prevent text overflow)
                                       Wrap(
                                         crossAxisAlignment:
                                             WrapCrossAlignment.center,
@@ -531,8 +576,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                           ],
                                         ],
                                       ),
-
-                                      // Stock Warning
                                       if (stockLimit <= 5)
                                         Padding(
                                           padding: const EdgeInsets.only(
@@ -560,8 +603,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                     ],
                                   ),
                                 ),
-
-                                // Subtotal & Qty Pill
                                 Column(
                                   crossAxisAlignment: CrossAxisAlignment.end,
                                   children: [
@@ -584,8 +625,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                       ),
                                     ),
                                     const SizedBox(height: 12),
-
-                                    // The Black Qty Pill
                                     Container(
                                       decoration: BoxDecoration(
                                         color: isDark
@@ -671,7 +710,73 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
                         const SizedBox(height: 24),
 
-                        // --- ORDER SUMMARY CARD ---
+                        Text(
+                          "PROMO CODE",
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.2,
+                            color: Colors.grey[500],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: isDark ? Colors.grey[800] : Colors.grey[100],
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: textColor,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  decoration: InputDecoration(
+                                    hintText: "ENTER CODE",
+                                    hintStyle: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[400],
+                                      fontWeight: FontWeight.normal,
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                    ),
+                                    border: InputBorder.none,
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                height: 36,
+                                child: ElevatedButton(
+                                  onPressed: () {},
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: isDark
+                                        ? Colors.grey[700]
+                                        : Colors.black,
+                                    foregroundColor: Colors.white,
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    "Apply",
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+
                         Container(
                           padding: const EdgeInsets.all(24),
                           decoration: BoxDecoration(
@@ -704,7 +809,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               ),
                               const SizedBox(height: 20),
 
-                              // Itemized List
                               ..._cartItems.map((item) {
                                 final itemPrice =
                                     (item['price'] as num?)?.toInt() ?? 0;
@@ -881,86 +985,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   ),
                                 ],
                               ),
-
-                              const SizedBox(height: 30),
-                              Text(
-                                "PROMO CODE",
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 1.2,
-                                  color: Colors.grey[500],
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: BoxDecoration(
-                                  color: isDark
-                                      ? Colors.grey[800]
-                                      : Colors.grey[100],
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: TextField(
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: textColor,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                        decoration: InputDecoration(
-                                          hintText: "ENTER CODE",
-                                          hintStyle: TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.grey[400],
-                                            fontWeight: FontWeight.normal,
-                                          ),
-                                          contentPadding:
-                                              const EdgeInsets.symmetric(
-                                                horizontal: 12,
-                                              ),
-                                          border: InputBorder.none,
-                                        ),
-                                      ),
-                                    ),
-                                    SizedBox(
-                                      height: 36,
-                                      child: ElevatedButton(
-                                        onPressed: () {},
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: isDark
-                                              ? Colors.grey[700]
-                                              : Colors.black,
-                                          foregroundColor: Colors.white,
-                                          elevation: 0,
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              6,
-                                            ),
-                                          ),
-                                        ),
-                                        child: const Text(
-                                          "Apply",
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
                             ],
                           ),
                         ),
 
                         const SizedBox(height: 30),
 
-                        // --- TRUST BADGES ---
-                        // 👇 Uses Wrap so it safely flows to the next line on huge fonts!
                         Wrap(
                           alignment: WrapAlignment.center,
                           spacing: 16,
@@ -983,14 +1013,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 100), // Padding for sticky bar
+                        const SizedBox(height: 100),
                       ],
                     ),
                   ),
                 ],
               ),
-
-        // --- STICKY BOTTOM CHECKOUT BUTTON ---
         bottomSheet: _cartItems.isEmpty
             ? null
             : Container(
@@ -1006,35 +1034,76 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   ],
                 ),
                 child: SafeArea(
-                  child: SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        final success = await context.push(
-                          '/place-order',
-                          extra: {'items': _cartItems, 'total': _totalAmount},
-                        );
-                        if (success == true && context.mounted) {
-                          context.pop(true);
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: greenColor,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // 👇 NEW: Hides the text completely while loading so it doesn't flash falsely
+                      if (!_isLoadingSettings &&
+                          isBelowMinOrder &&
+                          _minOrderValue > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12.0),
+                          child: Text(
+                            "Add Rs. ${(_minOrderValue - _subtotalAmount).toInt()} more to proceed to checkout",
+                            style: const TextStyle(
+                              color: Colors.redAccent,
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 56,
+                        child: ElevatedButton(
+                          // 👇 NEW: Locked immediately if it's loading OR below minimum
+                          onPressed: isButtonLocked
+                              ? null
+                              : () async {
+                                  final success = await context.push(
+                                    '/place-order',
+                                    extra: {
+                                      'items': _cartItems,
+                                      'total': _totalAmount,
+                                    },
+                                  );
+                                  if (success == true && context.mounted) {
+                                    context.pop(true);
+                                  }
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: isButtonLocked
+                                ? (isDark ? Colors.grey[800] : Colors.grey[300])
+                                : greenColor,
+                            foregroundColor: isButtonLocked
+                                ? (isDark ? Colors.grey[500] : Colors.grey[500])
+                                : Colors.white,
+                            elevation: isButtonLocked ? 0 : 2,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          // 👇 NEW: Shows a subtle loading spinner instead of text while it checks the rules
+                          child: _isLoadingSettings
+                              ? const SizedBox(
+                                  height: 24,
+                                  width: 24,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                    color: Colors.grey,
+                                  ),
+                                )
+                              : const Text(
+                                  "PROCEED TO CHECKOUT",
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 16,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
                         ),
                       ),
-                      child: const Text(
-                        "PROCEED TO CHECKOUT",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 16,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ),
+                    ],
                   ),
                 ),
               ),

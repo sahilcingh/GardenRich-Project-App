@@ -84,7 +84,7 @@ class _SplashScreenState extends State<SplashScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             // Leaf Icon
-            const Icon(Icons.eco, color: Color(0xFF92D050), size: 80),
+            const Icon(Icons.eco, color: Color(0xFF16a34a), size: 80),
             const SizedBox(height: 16),
 
             // GardenRich Text
@@ -105,7 +105,7 @@ class _SplashScreenState extends State<SplashScreen> {
                   ),
                   const TextSpan(
                     text: 'Rich',
-                    style: TextStyle(color: Color(0xFF92D050)),
+                    style: TextStyle(color: Color(0xFF16a34a)),
                   ),
                 ],
               ),
@@ -113,7 +113,7 @@ class _SplashScreenState extends State<SplashScreen> {
             const SizedBox(height: 32),
 
             // Loading Indicator
-            const CircularProgressIndicator(color: Color(0xFF92D050)),
+            const CircularProgressIndicator(color: Color(0xFF16a34a)),
           ],
         ),
       ),
