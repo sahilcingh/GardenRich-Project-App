@@ -33,7 +33,6 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
     _fetchStoreSettings();
   }
 
-  // 👇 FIXED: Now correctly reads from your Key-Value 'settings' table
   Future<void> _fetchStoreSettings() async {
     try {
       final response = await Supabase.instance.client
@@ -149,6 +148,101 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
               ),
             ),
           ],
+        );
+      },
+    );
+  }
+
+  // 👇 NEW: The Beautiful Success Popup!
+  void _showSuccessPopup() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: false, // Forces them to interact with the button
+      barrierLabel: "Success",
+      transitionDuration: const Duration(milliseconds: 400),
+      pageBuilder: (context, anim1, anim2) => const SizedBox(),
+      transitionBuilder: (context, anim1, anim2, child) {
+        final curvedAnimation = CurvedAnimation(
+          parent: anim1,
+          curve: Curves.easeOutBack,
+        );
+        return ScaleTransition(
+          scale: Tween<double>(begin: 0.7, end: 1.0).animate(curvedAnimation),
+          child: FadeTransition(
+            opacity: anim1,
+            child: AlertDialog(
+              backgroundColor: isDark ? const Color(0xFF1c1c1e) : Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+              contentPadding: const EdgeInsets.all(32),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF16a34a).withOpacity(0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.check_circle_rounded,
+                      color: Color(0xFF16a34a),
+                      size: 70,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    "Order Placed!",
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w900,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    "Your order has been successfully placed. We'll start preparing it right away!",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[500],
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(context); // Close the popup
+                        context.pop(
+                          true,
+                        ); // Tell the checkout screen to clear cart & go to orders
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF16a34a),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        "Track Order",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         );
       },
     );
@@ -276,6 +370,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
         'total': widget.total,
       };
 
+      // 1. Create the main order
       final orderResponse = await Supabase.instance.client
           .from('orders')
           .insert(orderData)
@@ -283,6 +378,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
           .single();
       final newOrderId = orderResponse['id'];
 
+      // 2. Bulk insert all order items at once
       final List<Map<String, dynamic>> orderItems = widget.items.map((item) {
         return {
           'order_id': newOrderId,
@@ -294,13 +390,10 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
         };
       }).toList();
 
-      try {
-        await Supabase.instance.client.from('order_items').insert(orderItems);
-      } catch (itemError) {
-        debugPrint("❌ ORDER ITEMS INSERT FAILED: $itemError");
-      }
+      await Supabase.instance.client.from('order_items').insert(orderItems);
 
-      for (var item in widget.items) {
+      // 👇 FIXED: Update all stock variants concurrently (Lightning fast!)
+      final List<Future<void>> stockUpdates = widget.items.map((item) async {
         final variantId = item['variant_id'];
         final qtyOrdered = item['qty'] as int;
 
@@ -315,6 +408,7 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
                 int.tryParse(variantData['stock']?.toString() ?? '0') ?? 0;
             int newStock = currentStock - qtyOrdered;
             if (newStock < 0) newStock = 0;
+
             await Supabase.instance.client
                 .from('product_variants')
                 .update({'stock': newStock})
@@ -323,45 +417,39 @@ class _PlaceOrderScreenState extends State<PlaceOrderScreen> {
             debugPrint("Failed to update stock for variant $variantId: $e");
           }
         }
-      }
+      }).toList();
 
-      try {
-        final firstName = _selectedAddress!['first_name'] ?? '';
-        final lastName = _selectedAddress!['last_name'] == 'EMPTY'
-            ? ''
-            : (_selectedAddress!['last_name'] ?? '');
-        final custName = '$firstName $lastName'.trim().isEmpty
-            ? 'Customer'
-            : '$firstName $lastName'.trim();
-        final fullAddress =
-            "${_selectedAddress!['address']}, ${_selectedAddress!['city']}, ${_selectedAddress!['pin_code']}";
+      await Future.wait(stockUpdates); // Wait for all to finish simultaneously
 
-        await EmailService.sendOrderConfirmation(
-          customerEmail: email,
-          customerName: custName,
-          orderId: newOrderId.toString(),
-          cartItems: widget.items,
-          totalAmount: widget.total.toInt(),
-          customerPhone: cleanPhone,
-          customerAddress: fullAddress,
-        );
-      } catch (emailError) {}
+      // 👇 FIXED: "Fire and Forget" the email. Do not 'await' it, let it run in the background!
+      final firstName = _selectedAddress!['first_name'] ?? '';
+      final lastName = _selectedAddress!['last_name'] == 'EMPTY'
+          ? ''
+          : (_selectedAddress!['last_name'] ?? '');
+      final custName = '$firstName $lastName'.trim().isEmpty
+          ? 'Customer'
+          : '$firstName $lastName'.trim();
+      final fullAddress =
+          "${_selectedAddress!['address']}, ${_selectedAddress!['city']}, ${_selectedAddress!['pin_code']}";
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("🎉 Order Placed Successfully!"),
-            backgroundColor: Color(0xFF16a34a),
-          ),
-        );
-        context.pop(true);
-      }
-    } catch (e) {
-      _showErrorPopup("Order Failed", "Something went wrong: $e");
-    } finally {
+      EmailService.sendOrderConfirmation(
+        customerEmail: email,
+        customerName: custName,
+        orderId: newOrderId.toString(),
+        cartItems: widget.items,
+        totalAmount: widget.total.toInt(),
+        customerPhone: cleanPhone,
+        customerAddress: fullAddress,
+      ).catchError((e) => debugPrint("Email failed in background: $e"));
+
+      // 4. Kill the loading spinner immediately and show the success popup
       if (mounted) {
         setState(() => _isProcessing = false);
+        _showSuccessPopup();
       }
+    } catch (e) {
+      if (mounted) setState(() => _isProcessing = false);
+      _showErrorPopup("Order Failed", "Something went wrong: $e");
     }
   }
 

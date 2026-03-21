@@ -1,4 +1,4 @@
-package com.example.garden_rich
+package com.gardenrich.app
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -40,6 +40,57 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
     });
   }
 
+  // 👇 NEW: Beautiful popup explaining why it can't be deleted
+  void _showAddressInUsePopup() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: isDark ? Colors.grey[900] : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.info_outline, color: Colors.orange),
+            const SizedBox(width: 8),
+            Text(
+              "Address in Use",
+              style: TextStyle(
+                color: isDark ? Colors.white : Colors.black,
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          "This address cannot be deleted because it is attached to one of your previous orders (we keep this for your receipts!).\n\nInstead of deleting, please click 'Edit' to update the details.",
+          style: TextStyle(
+            color: isDark ? Colors.grey[300] : Colors.grey[700],
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF16a34a),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text(
+              "Got it",
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _deleteAddress(String id) async {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -90,9 +141,16 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text("Error: $e")));
+          final errorStr = e.toString().toLowerCase();
+          // 👇 FIXED: Catch the foreign key constraint error specifically
+          if (errorStr.contains("violates foreign key constraint") ||
+              errorStr.contains("orders_address_id_fkey")) {
+            _showAddressInUsePopup();
+          } else {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text("Error: $e")));
+          }
         }
       }
     }
@@ -125,7 +183,6 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
       text: isEditing ? existingAddress['pin_code'] : '',
     );
 
-    // 👇 NEW: State for the default address toggle
     bool isDefault = isEditing
         ? (existingAddress['is_default'] ?? false)
         : false;
@@ -226,7 +283,6 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
                       ],
                     ),
 
-                    // 👇 NEW: The "Set as Default" Switch
                     SwitchListTile(
                       title: Text(
                         "Set as default address",
@@ -294,7 +350,6 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
                                   final user =
                                       Supabase.instance.client.auth.currentUser;
 
-                                  // 👇 NEW: If this is set as default, remove default from all other addresses first!
                                   if (isDefault) {
                                     await Supabase.instance.client
                                         .from('addresses')

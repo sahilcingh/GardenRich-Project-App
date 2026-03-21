@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
 
 import '../widgets/product_card.dart';
 import '../widgets/home_footer.dart';
@@ -15,6 +16,9 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  // 👇 BRAND COLOR DEFINED ONCE HERE
+  static const Color primaryGreen = Color(0xFF16a34a);
+
   String _searchQuery = "";
   final List<Map<String, dynamic>> _cartItems = [];
   String _selectedCategory = "All Products";
@@ -22,14 +26,15 @@ class _HomeScreenState extends State<HomeScreen> {
   late Future<List<Map<String, dynamic>>> _productsFuture;
 
   Timer? _refreshTimer;
+  RealtimeChannel? _orderChannel;
 
   @override
   void initState() {
     super.initState();
     _productsFuture = _fetchProducts();
     _fetchCategories();
+    _listenToOrderUpdates();
 
-    // Auto-refresh every 30 seconds
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _silentRefresh();
     });
@@ -38,7 +43,130 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _orderChannel?.unsubscribe();
     super.dispose();
+  }
+
+  void _listenToOrderUpdates() {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null) return;
+
+    _orderChannel = Supabase.instance.client.channel('public:user_orders');
+    _orderChannel!
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'orders',
+          callback: (payload) {
+            final newRecord = payload.newRecord;
+
+            if (newRecord['email'] == currentUser.email ||
+                newRecord['user_id'] == currentUser.id) {
+              final newStatus = newRecord['status']?.toString() ?? 'Updated';
+
+              FlutterRingtonePlayer().playNotification();
+              _showOrderStatusPopup(newRecord['id'].toString(), newStatus);
+            }
+          },
+        )
+        .subscribe();
+  }
+
+  void _showOrderStatusPopup(String orderId, String newStatus) {
+    if (!mounted) return;
+    String displayId = orderId.length > 8 ? orderId.substring(0, 8) : orderId;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: "Order Update",
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, anim1, anim2) => const SizedBox(),
+      transitionBuilder: (context, anim1, anim2, child) {
+        final curvedAnimation = CurvedAnimation(
+          parent: anim1,
+          curve: Curves.easeOutBack,
+        );
+
+        return ScaleTransition(
+          scale: Tween<double>(begin: 0.8, end: 1.0).animate(curvedAnimation),
+          child: FadeTransition(
+            opacity: anim1,
+            child: AlertDialog(
+              backgroundColor: isDark ? const Color(0xFF1c1c1e) : Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              title: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: primaryGreen.withOpacity(
+                        0.15,
+                      ), // 👈 Updated to brand green
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.local_shipping,
+                      color: primaryGreen,
+                    ), // 👈 Updated to brand green
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    "Order Update!",
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 18,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                ],
+              ),
+              content: Text(
+                "Your order #$displayId has been updated by the store:\n\n🔥 Status: $newStatus",
+                style: TextStyle(
+                  fontSize: 15,
+                  height: 1.4,
+                  color: isDark ? Colors.grey[300] : Colors.grey[700],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text(
+                    "Dismiss",
+                    style: TextStyle(
+                      color: Colors.grey,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    context.push('/orders');
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryGreen, // 👈 Uses master constant
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: const Text(
+                    "Track Order",
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _silentRefresh() {
@@ -108,7 +236,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Container(
               padding: const EdgeInsets.all(4),
               decoration: const BoxDecoration(
-                color: Color(0xFF16a34a),
+                color: primaryGreen, // 👈 Uses master constant
                 shape: BoxShape.circle,
               ),
               constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
@@ -169,7 +297,6 @@ class _HomeScreenState extends State<HomeScreen> {
         (screenWidth - totalHorizontalPadding) / crossAxisCount;
     final double dynamicExtent = cardWidth + (175.0 * textScale) + 10.0;
 
-    // 👇 FIXED: Safely calculates the cart total without throwing Null errors!
     double currentCartTotal = 0.0;
     for (var item in _cartItems) {
       final int qty = item['qty'] as int? ?? 1;
@@ -215,7 +342,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const TextSpan(
                   text: 'Rich',
-                  style: TextStyle(color: Color(0xFF16a34a)),
+                  style: TextStyle(
+                    color: primaryGreen,
+                  ), // 👈 Uses master constant
                 ),
               ],
             ),
@@ -251,7 +380,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
 
       body: RefreshIndicator(
-        color: const Color(0xFF16a34a),
+        color: primaryGreen, // 👈 Uses master constant
         backgroundColor: isDark ? Colors.grey[800] : Colors.white,
         onRefresh: () async {
           setState(() {
@@ -291,7 +420,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                     borderSide: const BorderSide(
-                      color: Color(0xFF16a34a),
+                      color: primaryGreen, // 👈 Uses master constant
                       width: 1,
                     ),
                   ),
@@ -365,7 +494,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       !snapshot.hasData) {
                     return const Center(
                       child: CircularProgressIndicator(
-                        color: Color(0xFF16a34a),
+                        color: primaryGreen, // 👈 Uses master constant
                       ),
                     );
                   }
